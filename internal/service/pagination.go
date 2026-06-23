@@ -35,18 +35,3 @@ func TotalPages(totalItems int64, pageSize int) int {
 	}
 	return pages
 }
-
-// ResolveHistoryPageSize validates/clamps pageSize for cursor-based history endpoints (4.3/4.4 TOR).
-func ResolveHistoryPageSize(pageSizeParam *int, defaultPageSize, maxPageSize int) (int, error) {
-	pageSize := defaultPageSize
-	if pageSizeParam != nil {
-		if *pageSizeParam < 1 {
-			return 0, domain.NewInvalidParameter("pageSize must be >= 1")
-		}
-		pageSize = *pageSizeParam
-	}
-	if pageSize > maxPageSize {
-		pageSize = maxPageSize
-	}
-	return pageSize, nil
-}

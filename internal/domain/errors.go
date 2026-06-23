@@ -11,6 +11,8 @@ const (
 	ErrCodeInvalidParameter   ErrorCode = "INVALID_PARAMETER"
 	ErrCodeNotFound           ErrorCode = "NOT_FOUND"
 	ErrCodeServiceUnavailable ErrorCode = "SERVICE_UNAVAILABLE"
+	ErrCodeUnauthorized       ErrorCode = "UNAUTHORIZED"
+	ErrCodeForbidden          ErrorCode = "FORBIDDEN"
 )
 
 // Error is a domain error carrying a stable code and a human-readable message.
@@ -49,4 +51,12 @@ func NewNotFound(message string) *Error {
 
 func NewServiceUnavailable(message string, err error) *Error {
 	return &Error{Code: ErrCodeServiceUnavailable, Message: message, Err: err}
+}
+
+func NewUnauthorized(message string) *Error {
+	return &Error{Code: ErrCodeUnauthorized, Message: message}
+}
+
+func NewForbidden(message string) *Error {
+	return &Error{Code: ErrCodeForbidden, Message: message}
 }

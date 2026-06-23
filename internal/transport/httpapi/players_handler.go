@@ -7,52 +7,14 @@ import (
 )
 
 type PlayersHandler struct {
-	punishments *service.PunishmentService
-	players     *service.PlayerService
+	players *service.PlayerService
 }
 
-func NewPlayersHandler(punishments *service.PunishmentService, players *service.PlayerService) *PlayersHandler {
-	return &PlayersHandler{punishments: punishments, players: players}
+func NewPlayersHandler(players *service.PlayerService) *PlayersHandler {
+	return &PlayersHandler{players: players}
 }
 
-func (h *PlayersHandler) history(w http.ResponseWriter, r *http.Request, byPlayer bool) {
-	uuid, err := NormalizeUUID(r.PathValue("uuid"))
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	before, err := ParseInt64Param(r, "before")
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	after, err := ParseInt64Param(r, "after")
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	pageSize, err := ParseIntParam(r, "pageSize")
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-
-	result, err := h.punishments.History(r.Context(), uuid, byPlayer, before, after, pageSize)
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, result)
-}
-
-func (h *PlayersHandler) History(w http.ResponseWriter, r *http.Request) {
-	h.history(w, r, true)
-}
-
-func (h *PlayersHandler) IssuedHistory(w http.ResponseWriter, r *http.Request) {
-	h.history(w, r, false)
-}
-
+// Lookup handles GET /public/lookup: uuid<->name resolution. Not sensitive, stays public.
 func (h *PlayersHandler) Lookup(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	name := q.Get("name")

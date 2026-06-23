@@ -19,22 +19,48 @@ func NewHistoryRepository(db *sql.DB, tablePrefix string) *HistoryRepository {
 
 var allPunishmentTypes = []domain.PunishmentType{domain.TypeBan, domain.TypeMute, domain.TypeWarning, domain.TypeKick}
 
-// HistoryFilter selects records by the uuid's role: as the punished player, or as the issuing moderator.
-type HistoryFilter struct {
-	UUID     string
-	ByPlayer bool // true: WHERE uuid = ?; false: WHERE banned_by_uuid = ?
-	Before   *int64
-	After    *int64
+// UnifiedFilter selects punishment records across multiple types for the union endpoints
+// (/player/punishments/me and /mod/punishments/list when type is unspecified).
+type UnifiedFilter struct {
+	Types         []domain.PunishmentType
+	PlayerUUID    *string
+	ModeratorUUID *string
+	ActiveFilter  *bool
+	SilentFilter  *bool
+	Before        *int64
+	After         *int64
 }
 
-func unionSubquery(prefix string, t domain.PunishmentType, f HistoryFilter) (string, []any) {
+func unifiedSubquery(prefix string, t domain.PunishmentType, f UnifiedFilter, now int64) (string, []any) {
 	table := tableName(prefix, t)
-	column := "uuid"
-	if !f.ByPlayer {
-		column = "banned_by_uuid"
+	var where []string
+	var args []any
+
+	where = append(where, "uuid IS NOT NULL", fmt.Sprintf("uuid <> '%s'", OfflineUUIDMarker))
+
+	if hasDurationColumns(t) {
+		if f.ActiveFilter != nil {
+			if *f.ActiveFilter {
+				where = append(where, "(active = 1 AND (until <= 0 OR until > ?))")
+				args = append(args, now)
+			} else {
+				where = append(where, "NOT (active = 1 AND (until <= 0 OR until > ?))")
+				args = append(args, now)
+			}
+		}
+		if f.SilentFilter != nil {
+			where = append(where, "silent = ?")
+			args = append(args, *f.SilentFilter)
+		}
 	}
-	where := []string{fmt.Sprintf("%s = ?", column)}
-	args := []any{f.UUID}
+	if f.PlayerUUID != nil {
+		where = append(where, "uuid = ?")
+		args = append(args, *f.PlayerUUID)
+	}
+	if f.ModeratorUUID != nil {
+		where = append(where, "banned_by_uuid = ?")
+		args = append(args, *f.ModeratorUUID)
+	}
 	if f.Before != nil {
 		where = append(where, "time < ?")
 		args = append(args, *f.Before)
@@ -43,6 +69,7 @@ func unionSubquery(prefix string, t domain.PunishmentType, f HistoryFilter) (str
 		where = append(where, "time > ?")
 		args = append(args, *f.After)
 	}
+
 	query := fmt.Sprintf(
 		"SELECT '%s' AS punishment_type, %s FROM %s WHERE %s",
 		t, selectColumns(t), table, strings.Join(where, " AND "),
@@ -50,12 +77,18 @@ func unionSubquery(prefix string, t domain.PunishmentType, f HistoryFilter) (str
 	return query, args
 }
 
-// List returns a page of the merged, time-descending history across all 4 punishment tables for the given uuid.
-func (r *HistoryRepository) List(ctx context.Context, f HistoryFilter, pageSize int) ([]PunishmentRow, int64, error) {
+// ListOffset returns an offset-paginated page of the merged, time-descending punishment
+// records across f.Types (or all 4 types if empty), used by the /player and /mod union endpoints.
+func (r *HistoryRepository) ListOffset(ctx context.Context, f UnifiedFilter, page, pageSize int, now int64) ([]PunishmentRow, int64, error) {
+	types := f.Types
+	if len(types) == 0 {
+		types = allPunishmentTypes
+	}
+
 	var unionParts []string
 	var args []any
-	for _, t := range allPunishmentTypes {
-		q, a := unionSubquery(r.tablePrefix, t, f)
+	for _, t := range types {
+		q, a := unifiedSubquery(r.tablePrefix, t, f, now)
 		unionParts = append(unionParts, q)
 		args = append(args, a...)
 	}
@@ -64,15 +97,15 @@ func (r *HistoryRepository) List(ctx context.Context, f HistoryFilter, pageSize 
 	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM (%s) AS merged", union)
 	var total int64
 	if err := r.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("count history: %w", err)
+		return nil, 0, fmt.Errorf("count unified: %w", err)
 	}
 
-	listQuery := fmt.Sprintf("SELECT * FROM (%s) AS merged ORDER BY time DESC LIMIT ?", union)
-	listArgs := append(append([]any{}, args...), pageSize)
+	listQuery := fmt.Sprintf("SELECT * FROM (%s) AS merged ORDER BY time DESC LIMIT ? OFFSET ?", union)
+	listArgs := append(append([]any{}, args...), pageSize, (page-1)*pageSize)
 
 	rows, err := r.db.QueryContext(ctx, listQuery, listArgs...)
 	if err != nil {
-		return nil, 0, fmt.Errorf("list history: %w", err)
+		return nil, 0, fmt.Errorf("list unified: %w", err)
 	}
 	defer rows.Close()
 
@@ -86,13 +119,13 @@ func (r *HistoryRepository) List(ctx context.Context, f HistoryFilter, pageSize 
 			&row.RemovedByDate, &row.RemovedByReason, &row.Active, &row.Silent,
 			&row.ServerOrigin, &row.ServerScope, &row.IPBan, &row.Acknowledged,
 		); err != nil {
-			return nil, 0, fmt.Errorf("scan history row: %w", err)
+			return nil, 0, fmt.Errorf("scan unified row: %w", err)
 		}
 		row.Type = domain.PunishmentType(typeStr)
 		items = append(items, row)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, 0, fmt.Errorf("iterate history: %w", err)
+		return nil, 0, fmt.Errorf("iterate unified: %w", err)
 	}
 	return items, total, nil
 }

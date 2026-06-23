@@ -46,6 +46,10 @@ func httpStatusForCode(code domain.ErrorCode) int {
 		return http.StatusNotFound
 	case domain.ErrCodeServiceUnavailable:
 		return http.StatusServiceUnavailable
+	case domain.ErrCodeUnauthorized:
+		return http.StatusUnauthorized
+	case domain.ErrCodeForbidden:
+		return http.StatusForbidden
 	default:
 		return http.StatusInternalServerError
 	}

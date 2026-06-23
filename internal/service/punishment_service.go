@@ -153,36 +153,80 @@ func (s *PunishmentService) Stats(ctx context.Context) (domain.Stats, error) {
 	return stats, nil
 }
 
-// History returns a page of merged punishment history for a player (received or issued), per TOR 4.3/4.4.
-func (s *PunishmentService) History(ctx context.Context, uuid string, byPlayer bool, before, after *int64, pageSizeParam *int) (domain.HistoryPage, error) {
-	pageSize, err := ResolveHistoryPageSize(pageSizeParam, s.defaultPageSize, s.maxPageSize)
-	if err != nil {
-		return domain.HistoryPage{}, err
+// UnifiedListParams carries the resolved query parameters for the offset-paginated
+// union endpoints (/player/punishments/me and /mod/punishments/list).
+type UnifiedListParams struct {
+	Types         []domain.PunishmentType // empty means all 4 types
+	Page          *int
+	PageSize      *int
+	Active        *bool
+	Silent        *bool
+	PlayerUUID    *string
+	ModeratorUUID *string
+	Before        *int64
+	After         *int64
+}
+
+// ListUnified returns an offset-paginated list of punishments. When exactly one type is
+// requested it delegates to List (single-table query); otherwise it merges across all
+// requested types (or all 4, if none specified) via a UNION query.
+func (s *PunishmentService) ListUnified(ctx context.Context, p UnifiedListParams) (domain.PunishmentList, error) {
+	if len(p.Types) == 1 {
+		return s.List(ctx, p.Types[0], ListParams{
+			Page:          p.Page,
+			PageSize:      p.PageSize,
+			Active:        p.Active,
+			Silent:        p.Silent,
+			PlayerUUID:    p.PlayerUUID,
+			ModeratorUUID: p.ModeratorUUID,
+		})
 	}
 
-	filter := repository.HistoryFilter{UUID: uuid, ByPlayer: byPlayer, Before: before, After: after}
-	rows, total, err := s.historyRepo.List(ctx, filter, pageSize)
+	page, pageSize, err := ResolveOffsetPage(p.Page, p.PageSize, s.defaultPageSize, s.maxPageSize)
 	if err != nil {
-		return domain.HistoryPage{}, domain.NewServiceUnavailable("failed to query history", err)
+		return domain.PunishmentList{}, err
 	}
 
 	now := time.Now().UnixMilli()
+	filter := repository.UnifiedFilter{
+		Types:         p.Types,
+		PlayerUUID:    p.PlayerUUID,
+		ModeratorUUID: p.ModeratorUUID,
+		Before:        p.Before,
+		After:         p.After,
+	}
+	if p.Active != nil {
+		filter.ActiveFilter = p.Active
+	} else if !s.includeInactive {
+		activeOnly := true
+		filter.ActiveFilter = &activeOnly
+	}
+	if p.Silent != nil {
+		filter.SilentFilter = p.Silent
+	} else if !s.includeSilent {
+		notSilent := false
+		filter.SilentFilter = &notSilent
+	}
+
+	rows, total, err := s.historyRepo.ListOffset(ctx, filter, page, pageSize, now)
+	if err != nil {
+		return domain.PunishmentList{}, domain.NewServiceUnavailable("failed to query punishments", err)
+	}
+
 	items := make([]domain.Punishment, 0, len(rows))
 	for _, row := range rows {
 		item, err := s.toDomain(ctx, row, now)
 		if err != nil {
-			return domain.HistoryPage{}, domain.NewServiceUnavailable("failed to resolve punishment", err)
+			return domain.PunishmentList{}, domain.NewServiceUnavailable("failed to resolve punishment", err)
 		}
 		items = append(items, item)
 	}
 
-	cursors := domain.HistoryCursors{}
-	if len(items) > 0 {
-		newest := items[0].IssuedAt
-		oldest := items[len(items)-1].IssuedAt
-		cursors.After = &newest
-		cursors.Before = &oldest
-	}
-
-	return domain.HistoryPage{Items: items, TotalItems: total, Cursors: cursors}, nil
+	return domain.PunishmentList{
+		Items:      items,
+		Page:       page,
+		PageSize:   pageSize,
+		TotalItems: total,
+		TotalPages: TotalPages(total, pageSize),
+	}, nil
 }

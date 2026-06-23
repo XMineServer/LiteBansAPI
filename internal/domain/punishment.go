@@ -26,6 +26,16 @@ func ParsePunishmentType(pathSegment string) (PunishmentType, bool) {
 	}
 }
 
+// ParsePunishmentTypeSingular maps a query parameter value (singular, e.g. "ban") to a PunishmentType.
+func ParsePunishmentTypeSingular(value string) (PunishmentType, bool) {
+	switch PunishmentType(value) {
+	case TypeBan, TypeMute, TypeWarning, TypeKick:
+		return PunishmentType(value), true
+	default:
+		return "", false
+	}
+}
+
 // Moderator describes who issued or removed a punishment.
 type Moderator struct {
 	UUID      *string `json:"uuid"`
@@ -76,19 +86,6 @@ type PunishmentList struct {
 	PageSize   int          `json:"pageSize"`
 	TotalItems int64        `json:"totalItems"`
 	TotalPages int          `json:"totalPages"`
-}
-
-// HistoryCursors describes the cursor bounds of a returned history page.
-type HistoryCursors struct {
-	Before *int64 `json:"before"`
-	After  *int64 `json:"after"`
-}
-
-// HistoryPage is the cursor-paginated response for player history endpoints.
-type HistoryPage struct {
-	Items      []Punishment   `json:"items"`
-	TotalItems int64          `json:"totalItems"`
-	Cursors    HistoryCursors `json:"cursors"`
 }
 
 // Stats are the aggregate counters for the dashboard endpoint.

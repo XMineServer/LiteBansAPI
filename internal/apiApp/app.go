@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
+	"xmine/litebans-api/internal/auth"
 	"xmine/litebans-api/internal/config"
 	"xmine/litebans-api/internal/db"
 	"xmine/litebans-api/internal/repository"
@@ -38,7 +39,14 @@ func New(ctx context.Context, cfg config.Config) (*ApiApp, error) {
 		cfg.DefaultPageSize, cfg.MaxPageSize,
 	)
 
-	mux := httpapi.NewRouter(punishmentSvc, playerSvc)
+	jwtValidator, err := auth.NewValidator(cfg.JWTPublicKeyPath, cfg.JWTIssuer)
+	if err != nil {
+		return nil, err
+	}
+	authorityClient := auth.NewAuthorityClient(cfg.AuthorityAPIURL, cfg.InternalToken, cfg.AuthorityCacheTTL)
+	authComp := httpapi.NewAuth(jwtValidator, authorityClient, cfg.ModPermission)
+
+	mux := httpapi.NewRouter(punishmentSvc, playerSvc, authComp, authorityClient, cfg.PublicTypes, cfg.ModPermission)
 
 	server := &http.Server{
 		Addr:    cfg.HTTPAddr,
