@@ -5,7 +5,7 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN go generate ./api/...
+RUN go generate ./api/... && go generate ./clients/...
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/litebans-api ./cmd
 
 FROM gcr.io/distroless/static-debian12:nonroot

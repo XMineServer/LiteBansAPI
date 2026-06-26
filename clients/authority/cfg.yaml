@@ -1,0 +1,5 @@
+package: authority
+generate:
+  client: true
+  models: true
+output: client.gen.go

@@ -2,21 +2,18 @@ package auth
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"slices"
 	"sync"
 	"time"
+	"xmine/litebans-api/clients/authority"
 )
 
 // AuthorityClient checks moderator permissions against the Authority Service's
 // GET /rank/{uuid} endpoint, caching responses briefly since permissions change rarely.
 type AuthorityClient struct {
-	baseURL       string
-	internalToken string
-	httpClient    *http.Client
-	ttl           time.Duration
+	client *authority.ClientWithResponses
+	ttl    time.Duration
 
 	mu    sync.RWMutex
 	cache map[string]cacheEntry
@@ -27,17 +24,15 @@ type cacheEntry struct {
 	expiresAt   time.Time
 }
 
-type rankResponse struct {
-	Permissions []string `json:"permissions"`
-}
-
 func NewAuthorityClient(baseURL, internalToken string, ttl time.Duration) *AuthorityClient {
+	client, err := authority.NewInternalClient(baseURL, internalToken)
+	if err != nil {
+		panic(fmt.Errorf("authority: build client: %w", err))
+	}
 	return &AuthorityClient{
-		baseURL:       baseURL,
-		internalToken: internalToken,
-		httpClient:    &http.Client{Timeout: 5 * time.Second},
-		ttl:           ttl,
-		cache:         make(map[string]cacheEntry),
+		client: client,
+		ttl:    ttl,
+		cache:  make(map[string]cacheEntry),
 	}
 }
 
@@ -56,30 +51,16 @@ func (c *AuthorityClient) permissions(ctx context.Context, uuid string) ([]strin
 		return perms, nil
 	}
 
-	url := fmt.Sprintf("%s/rank/%s", c.baseURL, uuid)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("authority: build request: %w", err)
-	}
-	req.Header.Set("X-Internal-Token", c.internalToken)
-
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.client.GetRankByUUIDWithResponse(ctx, uuid)
 	if err != nil {
 		return nil, fmt.Errorf("authority: request failed: %w", err)
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("authority: unexpected status %d", resp.StatusCode)
+	if resp.JSON200 == nil {
+		return nil, fmt.Errorf("authority: unexpected status %s", resp.Status())
 	}
 
-	var rank rankResponse
-	if err := json.NewDecoder(resp.Body).Decode(&rank); err != nil {
-		return nil, fmt.Errorf("authority: decode response: %w", err)
-	}
-
-	c.store(uuid, rank.Permissions)
-	return rank.Permissions, nil
+	c.store(uuid, resp.JSON200.Permissions)
+	return resp.JSON200.Permissions, nil
 }
 
 func (c *AuthorityClient) fromCache(uuid string) ([]string, bool) {
