@@ -13,18 +13,9 @@ type errorBody struct {
 	Message string `json:"message"`
 }
 
-func writeJSON(w http.ResponseWriter, status int, body any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if body == nil {
-		return
-	}
-	if err := json.NewEncoder(w).Encode(body); err != nil {
-		slog.Error("failed to encode response body", slog.Any("error", err))
-	}
-}
-
-func writeError(w http.ResponseWriter, err error) {
+// writeError maps a domain error (or any other error) to a JSON error response,
+// used as the StrictHTTPServerOptions.ResponseErrorHandlerFunc for the generated server.
+func writeError(w http.ResponseWriter, r *http.Request, err error) {
 	var derr *domain.Error
 	if errors.As(err, &derr) {
 		status := httpStatusForCode(derr.Code)
@@ -36,6 +27,17 @@ func writeError(w http.ResponseWriter, err error) {
 	}
 	slog.Error("unexpected error", slog.Any("error", err))
 	writeJSON(w, http.StatusInternalServerError, errorBody{Error: "INTERNAL_ERROR", Message: "internal server error"})
+}
+
+func writeJSON(w http.ResponseWriter, status int, body any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if body == nil {
+		return
+	}
+	if err := json.NewEncoder(w).Encode(body); err != nil {
+		slog.Error("failed to encode response body", slog.Any("error", err))
+	}
 }
 
 func httpStatusForCode(code domain.ErrorCode) int {

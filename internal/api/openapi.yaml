@@ -1,0 +1,401 @@
+openapi: "3.0.0"
+info:
+  title: litebans-api
+  version: "1.0.0"
+
+paths:
+  /api/v1/public/punishments:
+    get:
+      operationId: GetPublicPunishments
+      summary: List publicly visible punishments of a single (whitelisted) type
+      parameters:
+        - $ref: "#/components/parameters/TypeQuery"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/Active"
+        - $ref: "#/components/parameters/Silent"
+        - $ref: "#/components/parameters/PlayerUuid"
+        - $ref: "#/components/parameters/ModeratorUuid"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PunishmentList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /api/v1/public/punishments/stats:
+    get:
+      operationId: GetPublicPunishmentsStats
+      summary: Aggregate punishment counters
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Stats"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /api/v1/public/lookup:
+    get:
+      operationId: GetPublicLookup
+      summary: Resolve a player/moderator identity by name or uuid
+      parameters:
+        - name: name
+          in: query
+          schema:
+            type: string
+        - name: uuid
+          in: query
+          schema:
+            type: string
+        - name: moderatorName
+          in: query
+          schema:
+            type: string
+        - name: moderatorUuid
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Player"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /api/v1/player/punishments/me:
+    get:
+      operationId: GetPlayerPunishmentsMe
+      summary: The caller's own punishments across all types (requires JWT)
+      parameters:
+        - $ref: "#/components/parameters/TypeSingularQuery"
+        - $ref: "#/components/parameters/ModeratorUuid"
+        - name: before
+          in: query
+          schema:
+            type: integer
+            format: int64
+        - name: after
+          in: query
+          schema:
+            type: integer
+            format: int64
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PunishmentList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/mod/punishments/list:
+    get:
+      operationId: GetModPunishmentsList
+      summary: Full punishments listing across all players/moderators (requires moderator permission)
+      parameters:
+        - $ref: "#/components/parameters/TypeSingularQuery"
+        - $ref: "#/components/parameters/PlayerUuid"
+        - $ref: "#/components/parameters/ModeratorUuid"
+        - $ref: "#/components/parameters/Active"
+        - $ref: "#/components/parameters/Silent"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PunishmentList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /api/v1/punishments/{type}/{id}:
+    get:
+      operationId: GetPunishmentByID
+      summary: Contextual punishment lookup; JWT optional, authorized after load
+      parameters:
+        - name: type
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [bans, mutes, warnings, kicks]
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Punishment"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+components:
+  parameters:
+    TypeQuery:
+      name: type
+      in: query
+      schema:
+        type: string
+    TypeSingularQuery:
+      name: type
+      in: query
+      schema:
+        type: string
+        enum: [ban, mute, warning, kick]
+    Page:
+      name: page
+      in: query
+      schema:
+        type: integer
+        format: int32
+    PageSize:
+      name: pageSize
+      in: query
+      schema:
+        type: integer
+        format: int32
+    Active:
+      name: active
+      in: query
+      schema:
+        type: boolean
+    Silent:
+      name: silent
+      in: query
+      schema:
+        type: boolean
+    PlayerUuid:
+      name: playerUuid
+      in: query
+      schema:
+        type: string
+    ModeratorUuid:
+      name: moderatorUuid
+      in: query
+      schema:
+        type: string
+
+  schemas:
+    Moderator:
+      type: object
+      required: [isConsole]
+      properties:
+        uuid:
+          type: string
+          nullable: true
+        name:
+          type: string
+          nullable: true
+        isConsole:
+          type: boolean
+
+    Player:
+      type: object
+      required: [isConsole, offlineMode]
+      properties:
+        uuid:
+          type: string
+          nullable: true
+        name:
+          type: string
+          nullable: true
+        isConsole:
+          type: boolean
+        offlineMode:
+          type: boolean
+
+    Removed:
+      type: object
+      required: [by, at, expiredAutomatically]
+      properties:
+        by:
+          $ref: "#/components/schemas/Moderator"
+        at:
+          type: integer
+          format: int64
+        reason:
+          type: string
+          nullable: true
+        expiredAutomatically:
+          type: boolean
+
+    Punishment:
+      type: object
+      required: [id, type, playerUuid, reason, moderator, issuedAt, serverOrigin]
+      properties:
+        id:
+          description: Punishment id; numeric or obfuscated string depending on server configuration.
+        type:
+          type: string
+          enum: [ban, mute, warning, kick]
+        playerUuid:
+          type: string
+        reason:
+          type: string
+        moderator:
+          $ref: "#/components/schemas/Moderator"
+        issuedAt:
+          type: integer
+          format: int64
+        expiresAt:
+          type: integer
+          format: int64
+          nullable: true
+        permanent:
+          type: boolean
+          nullable: true
+        active:
+          type: boolean
+          nullable: true
+        expired:
+          type: boolean
+          nullable: true
+        ipBan:
+          type: boolean
+          nullable: true
+        silent:
+          type: boolean
+          nullable: true
+        serverOrigin:
+          type: string
+          nullable: true
+        serverScope:
+          type: string
+          nullable: true
+        removed:
+          allOf:
+            - $ref: "#/components/schemas/Removed"
+          nullable: true
+        acknowledged:
+          type: boolean
+          nullable: true
+
+    PunishmentList:
+      type: object
+      required: [items, page, pageSize, totalItems, totalPages]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Punishment"
+        page:
+          type: integer
+          format: int32
+        pageSize:
+          type: integer
+          format: int32
+        totalItems:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+
+    Stats:
+      type: object
+      required: [bans, mutes, warnings, kicks]
+      properties:
+        bans:
+          type: integer
+          format: int64
+        mutes:
+          type: integer
+          format: int64
+        warnings:
+          type: integer
+          format: int64
+        kicks:
+          type: integer
+          format: int64
+
+    ErrorResponse:
+      type: object
+      required: [error, message]
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Forbidden:
+      description: Forbidden
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    ServiceUnavailable:
+      description: Service unavailable
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"

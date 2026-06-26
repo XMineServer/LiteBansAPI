@@ -1,0 +1,30 @@
+name: Publish OpenAPI spec
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'api/openapi.yaml'
+  workflow_dispatch:
+
+jobs:
+  publish-spec:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Имя сервиса берётся из переменной репозитория SERVICE_ID.
+      # Задай её в Settings → Secrets and variables → Actions → Variables.
+      # Пример: identity-service, economy-service, auth-service
+      - name: Publish spec to XMineDocs
+        uses: dmnemec/copy_file_to_another_repo_action@main
+        env:
+          API_TOKEN_GITHUB: ${{ secrets.DOCS_DEPLOY_TOKEN }}
+        with:
+          source_file: api/openapi.yaml
+          destination_repo: XMineServer/XMineDocs
+          destination_folder: openapi/specs/${{ vars.SERVICE_ID }}
+          user_email: github-actions[bot]@users.noreply.github.com
+          user_name: github-actions[bot]
+          commit_message: "chore: update ${{ vars.SERVICE_ID }} spec"

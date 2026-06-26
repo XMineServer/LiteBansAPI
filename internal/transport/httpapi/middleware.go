@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"xmine/litebans-api/internal/api"
 	"xmine/litebans-api/internal/auth"
 	"xmine/litebans-api/internal/domain"
 )
@@ -43,68 +44,75 @@ func bearerToken(r *http.Request) (string, bool) {
 	return token, true
 }
 
-// RequireJWT rejects requests without a valid JWT (401), otherwise places the
-// player uuid (JWT "sub") into the request context.
-func (a *Auth) RequireJWT(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		token, ok := bearerToken(r)
-		if !ok {
-			writeError(w, domain.NewUnauthorized("missing bearer token"))
-			return
-		}
-		uuid, err := a.validator.Subject(token)
-		if err != nil {
-			writeError(w, domain.NewUnauthorized("invalid or expired token"))
-			return
-		}
-		ctx := context.WithValue(r.Context(), playerUUIDKey, uuid)
-		next(w, r.WithContext(ctx))
+// StrictMiddleware dispatches per-operation auth requirements by operationId, since the
+// generated StrictServerInterface has a single handler signature for all operations.
+func (a *Auth) StrictMiddleware(f api.StrictHandlerFunc, operationID string) api.StrictHandlerFunc {
+	switch operationID {
+	case "GetPlayerPunishmentsMe":
+		return a.requireJWT(f)
+	case "GetModPunishmentsList":
+		return a.requireModPermission(f)
+	case "GetPunishmentByID":
+		return a.optionalJWT(f)
+	default:
+		return f
 	}
 }
 
-// RequireModPermission requires a valid JWT and the configured moderator permission,
-// returning 401/403/503 as appropriate.
-func (a *Auth) RequireModPermission(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+// requireJWT rejects requests without a valid JWT (401), otherwise places the
+// player uuid (JWT "sub") into the request context.
+func (a *Auth) requireJWT(next api.StrictHandlerFunc) api.StrictHandlerFunc {
+	return func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		token, ok := bearerToken(r)
 		if !ok {
-			writeError(w, domain.NewUnauthorized("missing bearer token"))
-			return
+			return nil, domain.NewUnauthorized("missing bearer token")
 		}
 		uuid, err := a.validator.Subject(token)
 		if err != nil {
-			writeError(w, domain.NewUnauthorized("invalid or expired token"))
-			return
+			return nil, domain.NewUnauthorized("invalid or expired token")
 		}
-		hasPermission, err := a.authority.HasPermission(r.Context(), uuid, a.modPermission)
+		ctx = context.WithValue(ctx, playerUUIDKey, uuid)
+		return next(ctx, w, r, request)
+	}
+}
+
+// requireModPermission requires a valid JWT and the configured moderator permission,
+// returning 401/403/503 as appropriate.
+func (a *Auth) requireModPermission(next api.StrictHandlerFunc) api.StrictHandlerFunc {
+	return func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		token, ok := bearerToken(r)
+		if !ok {
+			return nil, domain.NewUnauthorized("missing bearer token")
+		}
+		uuid, err := a.validator.Subject(token)
 		if err != nil {
-			writeError(w, domain.NewServiceUnavailable("failed to verify permissions", err))
-			return
+			return nil, domain.NewUnauthorized("invalid or expired token")
+		}
+		hasPermission, err := a.authority.HasPermission(ctx, uuid, a.modPermission)
+		if err != nil {
+			return nil, domain.NewServiceUnavailable("failed to verify permissions", err)
 		}
 		if !hasPermission {
-			writeError(w, domain.NewForbidden("missing required permission"))
-			return
+			return nil, domain.NewForbidden("missing required permission")
 		}
-		ctx := context.WithValue(r.Context(), playerUUIDKey, uuid)
-		next(w, r.WithContext(ctx))
+		ctx = context.WithValue(ctx, playerUUIDKey, uuid)
+		return next(ctx, w, r, request)
 	}
 }
 
-// OptionalJWT parses a JWT if present and valid, placing the player uuid into the
+// optionalJWT parses a JWT if present and valid, placing the player uuid into the
 // request context, but never rejects the request if the token is absent/invalid.
-func (a *Auth) OptionalJWT(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+func (a *Auth) optionalJWT(next api.StrictHandlerFunc) api.StrictHandlerFunc {
+	return func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		token, ok := bearerToken(r)
 		if !ok {
-			next(w, r)
-			return
+			return next(ctx, w, r, request)
 		}
 		uuid, err := a.validator.Subject(token)
 		if err != nil {
-			next(w, r)
-			return
+			return next(ctx, w, r, request)
 		}
-		ctx := context.WithValue(r.Context(), playerUUIDKey, uuid)
-		next(w, r.WithContext(ctx))
+		ctx = context.WithValue(ctx, playerUUIDKey, uuid)
+		return next(ctx, w, r, request)
 	}
 }
