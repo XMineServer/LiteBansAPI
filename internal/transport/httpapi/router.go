@@ -2,7 +2,7 @@ package httpapi
 
 import (
 	"net/http"
-	"xmine/litebans-api/internal/api"
+	"xmine/litebans-api/api"
 	"xmine/litebans-api/internal/auth"
 	"xmine/litebans-api/internal/service"
 )

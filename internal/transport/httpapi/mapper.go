@@ -1,7 +1,7 @@
 package httpapi
 
 import (
-	"xmine/litebans-api/internal/api"
+	"xmine/litebans-api/api"
 	"xmine/litebans-api/internal/domain"
 )
 

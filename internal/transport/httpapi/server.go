@@ -3,7 +3,7 @@ package httpapi
 import (
 	"context"
 	"slices"
-	"xmine/litebans-api/internal/api"
+	"xmine/litebans-api/api"
 	"xmine/litebans-api/internal/auth"
 	"xmine/litebans-api/internal/domain"
 	"xmine/litebans-api/internal/service"

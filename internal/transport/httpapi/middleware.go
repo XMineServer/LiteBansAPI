@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
-	"xmine/litebans-api/internal/api"
+	"xmine/litebans-api/api"
 	"xmine/litebans-api/internal/auth"
 	"xmine/litebans-api/internal/domain"
 )
