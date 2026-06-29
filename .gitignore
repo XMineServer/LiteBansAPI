@@ -1,2 +1,10 @@
+# Local environment
+.env
+
+# Build artifacts
+*.exe
+/litebans-api
+
+# Generated code
 /api/api.gen.go
 /clients/*/client.gen.go

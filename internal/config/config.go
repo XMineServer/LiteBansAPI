@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"time"
 	"xmine/litebans-api/internal/domain"
-	"xmine/litebans-api/internal/logger"
+	"xmine/litebans-api/internal/logging"
 
 	"github.com/caarlos0/env/v11"
 )
@@ -19,9 +19,9 @@ type Config struct {
 	DatabasePassword string `env:"DATABASE_PASSWORD,required"`
 	DatabaseName     string `env:"DATABASE_NAME,required"`
 
-	HTTPAddr  string           `env:"HTTP_ADDR" envDefault:":8080"`
-	LogFormat logger.LogFormat `env:"LOG_FORMAT" envDefault:"text"`
-	LogLevel  slog.Level       `env:"LOG_LEVEL" envDefault:"info"`
+	HTTPAddr  string            `env:"HTTP_ADDR" envDefault:":8080"`
+	LogFormat logging.LogFormat `env:"LOG_FORMAT" envDefault:"text"`
+	LogLevel  slog.Level        `env:"LOG_LEVEL" envDefault:"info"`
 
 	// TablePrefix is the LiteBans table name prefix (e.g. "litebans_bans").
 	TablePrefix string `env:"TABLE_PREFIX" envDefault:"litebans_"`

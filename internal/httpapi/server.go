@@ -6,6 +6,7 @@ import (
 	"xmine/litebans-api/api"
 	"xmine/litebans-api/internal/auth"
 	"xmine/litebans-api/internal/domain"
+	"xmine/litebans-api/internal/middleware"
 	"xmine/litebans-api/internal/service"
 )
 
@@ -160,7 +161,7 @@ func (s *Server) GetPublicLookup(ctx context.Context, request api.GetPublicLooku
 // middleware); any playerUuid query parameter is ignored to prevent a player from viewing
 // someone else's records.
 func (s *Server) GetPlayerPunishmentsMe(ctx context.Context, request api.GetPlayerPunishmentsMeRequestObject) (api.GetPlayerPunishmentsMeResponseObject, error) {
-	uuid, ok := PlayerUUIDFromContext(ctx)
+	uuid, ok := middleware.PlayerUUIDFromContext(ctx)
 	if !ok {
 		return nil, domain.NewUnauthorized("missing or invalid token")
 	}
@@ -255,7 +256,7 @@ func (s *Server) GetPunishmentByID(ctx context.Context, request api.GetPunishmen
 		return api.GetPunishmentByID200JSONResponse(toAPIPunishment(result)), nil
 	}
 
-	uuid, ok := PlayerUUIDFromContext(ctx)
+	uuid, ok := middleware.PlayerUUIDFromContext(ctx)
 	if !ok {
 		return nil, domain.NewNotFound("punishment not found")
 	}

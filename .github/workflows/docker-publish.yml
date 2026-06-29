@@ -2,7 +2,6 @@ name: Publish Docker image
 
 on:
   push:
-    branches: ["main"]
     tags: ["v*.*.*"]
   workflow_dispatch:
 
@@ -22,15 +21,13 @@ jobs:
           go-version-file: go.mod
 
       - name: Generate
-        run: |
-          go generate ./api/...
-          go generate ./clients/...
-
-      - name: Build
-        run: go build ./...
+        run: go generate ./api/... ./clients/...
 
       - name: Vet
         run: go vet ./...
+
+      - name: Build
+        run: go build ./...
 
   build-and-push:
     needs: test
@@ -62,7 +59,6 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=ref,event=branch
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha,format=short

@@ -2,12 +2,46 @@ openapi: "3.0.0"
 info:
   title: litebans-api
   version: "1.0.0"
+  description: |
+    LiteBans REST API — описание для фронтенда.
+
+    Базовый префикс всех путей: `/api/v1`. Это read-only API (нет методов на создание/изменение данных).
+
+    Введены три уровня доступа: **аноним** (`/public/*`), **игрок** (`/player/*`, требует JWT) и
+    **модератор** (`/mod/*`, требует JWT + право `web.litebans.view.all`). Контекстный эндпоинт
+    `GET /punishments/{type}/{id}` доступен всем, но авторизуется по содержимому записи.
+
+    ## Общие положения
+
+    - Все временные метки (`issuedAt`, `expiresAt`, `at`, `before`/`after`) — Unix-время в **миллисекундах**.
+    - `reason`/`removed.reason` приходят уже очищенными от цветовых кодов Minecraft (`§x`, `&x`, `#RRGGBB`).
+    - uuid принимается и в виде с тире, и без — но в ответах сервис всегда возвращает канонический вид с тире, в нижнем регистре.
+    - Все списочные эндпоинты используют **офсетную** пагинацию (`page`/`pageSize`) и возвращают `PunishmentList`.
+    - Авторизация — заголовком `Authorization: Bearer <JWT>`. JWT выпускается Identity Service (RS256), проверяются `iss` и `exp`; uuid игрока берётся из `sub`.
+
+tags:
+  - name: Public
+    description: Анонимные read-only эндпоинты наказаний (без авторизации).
+  - name: Player
+    description: Наказания текущего авторизованного игрока (требует JWT).
+  - name: Moderation
+    description: Полные списки наказаний по всем игрокам (требует право модератора).
+  - name: Punishments
+    description: Получение одного наказания, авторизация по содержимому записи.
 
 paths:
   /api/v1/public/punishments:
     get:
       operationId: GetPublicPunishments
-      summary: List publicly visible punishments of a single (whitelisted) type
+      tags:
+        - Public
+      summary: Список публично видимых наказаний одного типа
+      description: |
+        Без авторизации.
+
+        ```
+        GET /api/v1/public/punishments?page=1&pageSize=20&active=true
+        ```
       parameters:
         - $ref: "#/components/parameters/TypeQuery"
         - $ref: "#/components/parameters/Page"
@@ -18,7 +52,7 @@ paths:
         - $ref: "#/components/parameters/ModeratorUuid"
       responses:
         "200":
-          description: Success
+          description: Успех
           content:
             application/json:
               schema:
@@ -33,10 +67,13 @@ paths:
   /api/v1/public/punishments/stats:
     get:
       operationId: GetPublicPunishmentsStats
-      summary: Aggregate punishment counters
+      tags:
+        - Public
+      summary: Агрегированные счётчики наказаний
+      description: Глобальная статистика по наказаниям, без авторизации и без параметров.
       responses:
         "200":
-          description: Success
+          description: Успех
           content:
             application/json:
               schema:
@@ -49,27 +86,34 @@ paths:
   /api/v1/public/lookup:
     get:
       operationId: GetPublicLookup
-      summary: Resolve a player/moderator identity by name or uuid
+      tags:
+        - Public
+      summary: Резолвинг игрока/модератора по имени или uuid
+      description: Резолвинг uuid↔имя по истории имён, без авторизации.
       parameters:
         - name: name
           in: query
+          description: "Имя игрока, 1–16 символов `[A-Za-z0-9_]`. Передаётся ровно один из параметров: `name`, `uuid`, `moderatorName`, `moderatorUuid`."
           schema:
             type: string
         - name: uuid
           in: query
+          description: "UUID игрока. Передаётся ровно один из параметров: `name`, `uuid`, `moderatorName`, `moderatorUuid`."
           schema:
             type: string
         - name: moderatorName
           in: query
+          description: "Имя модератора (тот же формат, что у `name`). Передаётся ровно один из параметров: `name`, `uuid`, `moderatorName`, `moderatorUuid`."
           schema:
             type: string
         - name: moderatorUuid
           in: query
+          description: "UUID модератора. Передаётся ровно один из параметров: `name`, `uuid`, `moderatorName`, `moderatorUuid`."
           schema:
             type: string
       responses:
         "200":
-          description: Success
+          description: Успех
           content:
             application/json:
               schema:
@@ -77,24 +121,35 @@ paths:
         "400":
           $ref: "#/components/responses/BadRequest"
         "404":
-          $ref: "#/components/responses/NotFound"
+          description: Совпадений по переданному имени/uuid не найдено.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
 
   /api/v1/player/punishments/me:
     get:
       operationId: GetPlayerPunishmentsMe
-      summary: The caller's own punishments across all types (requires JWT)
+      tags:
+        - Player
+      summary: Наказания текущего игрока (все типы)
+      description: Наказания текущего игрока, идентифицируемого по JWT (без отдельного параметра для uuid игрока).
+      security:
+        - bearerAuth: []
       parameters:
         - $ref: "#/components/parameters/TypeSingularQuery"
         - $ref: "#/components/parameters/ModeratorUuid"
         - name: before
           in: query
+          description: Нижняя граница `issuedAt` (включительно), unix ms.
           schema:
             type: integer
             format: int64
         - name: after
           in: query
+          description: Верхняя граница `issuedAt` (включительно), unix ms.
           schema:
             type: integer
             format: int64
@@ -102,7 +157,7 @@ paths:
         - $ref: "#/components/parameters/PageSize"
       responses:
         "200":
-          description: Success
+          description: Успех
           content:
             application/json:
               schema:
@@ -117,7 +172,12 @@ paths:
   /api/v1/mod/punishments/list:
     get:
       operationId: GetModPunishmentsList
-      summary: Full punishments listing across all players/moderators (requires moderator permission)
+      tags:
+        - Moderation
+      summary: Полный список наказаний по всем игрокам и модераторам
+      description: Требует право `web.litebans.view.all`.
+      security:
+        - bearerAuth: []
       parameters:
         - $ref: "#/components/parameters/TypeSingularQuery"
         - $ref: "#/components/parameters/PlayerUuid"
@@ -128,7 +188,7 @@ paths:
         - $ref: "#/components/parameters/PageSize"
       responses:
         "200":
-          description: Success
+          description: Успех
           content:
             application/json:
               schema:
@@ -147,22 +207,37 @@ paths:
   /api/v1/punishments/{type}/{id}:
     get:
       operationId: GetPunishmentByID
-      summary: Contextual punishment lookup; JWT optional, authorized after load
+      tags:
+        - Punishments
+      summary: Получение одного наказания по типу и id
+      description: |
+        Доступность записи зависит от типа и содержимого: публично разрешённые типы
+        (например `bans`) отдаются без JWT; для остальных нужен валидный JWT, и
+        доступ есть либо владельцу записи (uuid совпадает с `sub` из токена), либо
+        вызывающему с правом `web.litebans.view.all`.
+
+        Возвращает запись независимо от её текущей видимости (активна, тиха,
+        неактивна).
+      security:
+        - {}
+        - bearerAuth: []
       parameters:
         - name: type
           in: path
           required: true
+          description: Тип наказания, во множественном числе (в отличие от query-параметра `type` других эндпоинтов).
           schema:
             type: string
             enum: [bans, mutes, warnings, kicks]
         - name: id
           in: path
           required: true
+          description: Значение поля `id` объекта `Punishment` — передавать как есть, без преобразований (см. описание схемы `Punishment.id`).
           schema:
             type: string
       responses:
         "200":
-          description: Success
+          description: Успех
           content:
             application/json:
               schema:
@@ -170,53 +245,78 @@ paths:
         "400":
           $ref: "#/components/responses/BadRequest"
         "404":
-          $ref: "#/components/responses/NotFound"
+          description: Запись не найдена, либо принадлежит другому игроку и недоступна вызывающему (тот же код, что и при отсутствии записи).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "500":
           $ref: "#/components/responses/InternalError"
 
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT, выданный Identity Service (RS256). Используется для идентификации игрока.
+
   parameters:
     TypeQuery:
       name: type
       in: query
+      description: Один из разрешённых публичных типов наказаний; по умолчанию `ban`. Значение вне списка разрешённых → `400 INVALID_PARAMETER`.
       schema:
         type: string
     TypeSingularQuery:
       name: type
       in: query
+      description: Тип наказания. Без параметра — все типы вперемешку.
       schema:
         type: string
         enum: [ban, mute, warning, kick]
     Page:
       name: page
       in: query
+      description: Номер страницы (с 1). По умолчанию 1.
       schema:
         type: integer
         format: int32
     PageSize:
       name: pageSize
       in: query
+      description: Размер страницы. Дефолт и верхний предел задаются конфигурацией сервиса.
       schema:
         type: integer
         format: int32
     Active:
       name: active
       in: query
+      description: |
+        Переопределяет дефолт видимости активных записей. Дефолт настраивается на
+        деплое и может отличаться между средами — если нужно явно показать «все,
+        включая снятые», не полагайтесь на него и передавайте параметр явно.
       schema:
         type: boolean
     Silent:
       name: silent
       in: query
+      description: |
+        Переопределяет дефолт видимости тихих записей. Дефолт настраивается на
+        деплое и может отличаться между средами — если нужно явно показать «все,
+        включая тихие», не полагайтесь на него и передавайте параметр явно.
       schema:
         type: boolean
     PlayerUuid:
       name: playerUuid
       in: query
+      description: Фильтр по игроку.
       schema:
         type: string
     ModeratorUuid:
       name: moderatorUuid
       in: query
+      description: Фильтр по модератору (кто выдал наказание).
       schema:
         type: string
 
@@ -228,6 +328,7 @@ components:
         uuid:
           type: string
           nullable: true
+          description: null, если выдано консолью.
         name:
           type: string
           nullable: true
@@ -237,13 +338,16 @@ components:
     Player:
       type: object
       required: [isConsole, offlineMode]
+      description: Только для `/public/lookup`.
       properties:
         uuid:
           type: string
           nullable: true
+          description: null для записей консоли.
         name:
           type: string
           nullable: true
+          description: null, если имя не резолвится.
         isConsole:
           type: boolean
         offlineMode:
@@ -252,6 +356,10 @@ components:
     Removed:
       type: object
       required: [by, at, expiredAutomatically]
+      description: |
+        Присутствует только когда наказание было явно снято модератором/консолью
+        (не при автоматическом истечении срока — в этом случае `removed` будет
+        `null`, а `expired: true`).
       properties:
         by:
           $ref: "#/components/schemas/Moderator"
@@ -263,18 +371,30 @@ components:
           nullable: true
         expiredAutomatically:
           type: boolean
+          description: Всегда `false` в текущей версии API.
 
     Punishment:
       type: object
       required: [id, type, playerUuid, reason, moderator, issuedAt, serverOrigin]
+      description: |
+        Наказание одного из четырёх типов: ban / mute / warning / kick. У записей с
+        `type: kick` отсутствуют поля длительности и снятия — см. описания полей
+        `expiresAt`, `permanent`, `active`, `expired`, `ipBan`, `silent`,
+        `serverScope`, `removed`, `acknowledged`. В списках, где `type` не указан в
+        запросе (`/player/punishments/me`, `/mod/punishments/list`), `items` —
+        union всех 4 типов, различать по полю `type`.
       properties:
         id:
-          description: Punishment id; numeric or obfuscated string depending on server configuration.
+          description: |
+            Идентификатор наказания: число либо (при включённой на сервере
+            обфускации id) непрозрачная строка-токен. Токен привязан к конкретному
+            `type` — id, полученный для `bans`, нельзя использовать в `mutes`.
         type:
           type: string
           enum: [ban, mute, warning, kick]
         playerUuid:
           type: string
+          description: Просто строка, без резолвленного имени; для имени использовать `/public/lookup?uuid=...`.
         reason:
           type: string
         moderator:
@@ -286,34 +406,48 @@ components:
           type: integer
           format: int64
           nullable: true
+          description: Отсутствует, если `permanent === true`. Отсутствует у kick.
         permanent:
           type: boolean
           nullable: true
+          description: Отсутствует у kick.
         active:
           type: boolean
           nullable: true
+          description: Отсутствует у kick.
         expired:
           type: boolean
           nullable: true
+          description: Отсутствует у kick.
         ipBan:
           type: boolean
           nullable: true
+          description: Отсутствует у kick.
         silent:
           type: boolean
           nullable: true
+          description: Отсутствует у kick.
         serverOrigin:
           type: string
           nullable: true
         serverScope:
           type: string
           nullable: true
+          description: Отсутствует у kick.
         removed:
           allOf:
             - $ref: "#/components/schemas/Removed"
           nullable: true
+          description: |
+            Отсутствует у kick. У остальных типов присутствует только если
+            наказание было явно снято. Чтобы понять причину закрытия записи,
+            используйте пару `(removed, expired)`: `removed` есть → снято явно;
+            `removed` нет и `expired === true` → истекло само; `removed` нет и
+            `expired === false` → ещё действует.
         acknowledged:
           type: boolean
           nullable: true
+          description: Только для `type === "warning"`. Отсутствует у kick.
 
     PunishmentList:
       type: object
@@ -356,6 +490,19 @@ components:
     ErrorResponse:
       type: object
       required: [error, message]
+      description: |
+        Единый формат ошибки для всех эндпоинтов. `error` — машиночитаемый код:
+
+        | HTTP | `error` | Когда |
+        |---|---|---|
+        | 400 | `INVALID_UUID` | некорректный формат uuid (не 32/36 hex-символов) |
+        | 400 | `INVALID_TYPE` | `{type}` не из набора `bans/mutes/warnings/kicks` |
+        | 400 | `INVALID_PARAMETER` | некорректная пагинация, булево значение, имя игрока, `type` вне разрешённого набора, или некорректная комбинация параметров `/public/lookup` |
+        | 401 | `UNAUTHORIZED` | требуется JWT, но он отсутствует/невалиден/истёк |
+        | 403 | `FORBIDDEN` | JWT валиден, но нет права `web.litebans.view.all` |
+        | 404 | `NOT_FOUND` | наказание/игрок не найден, либо запись существует, но недоступна вызывающему |
+        | 503 | `SERVICE_UNAVAILABLE` | проблема с БД или с Authority Service |
+        | 500 | `INTERNAL_ERROR` | непредвиденная ошибка сервиса |
       properties:
         error:
           type: string
@@ -364,37 +511,37 @@ components:
 
   responses:
     BadRequest:
-      description: Bad request
+      description: Некорректный запрос
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
     NotFound:
-      description: Not found
+      description: Не найдено
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
     Unauthorized:
-      description: Unauthorized
+      description: Не авторизован
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
     Forbidden:
-      description: Forbidden
+      description: Доступ запрещён
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
     InternalError:
-      description: Internal server error
+      description: Внутренняя ошибка сервера
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
     ServiceUnavailable:
-      description: Service unavailable
+      description: Сервис недоступен
       content:
         application/json:
           schema:
