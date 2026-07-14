@@ -30,7 +30,7 @@ tags:
     description: Получение одного наказания, авторизация по содержимому записи.
 
 paths:
-  /api/v1/public/punishments:
+  /api/litebans/v1/public/punishments:
     get:
       operationId: GetPublicPunishments
       tags:
@@ -64,7 +64,7 @@ paths:
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
 
-  /api/v1/public/punishments/stats:
+  /api/litebans/v1/public/punishments/stats:
     get:
       operationId: GetPublicPunishmentsStats
       tags:
@@ -83,7 +83,7 @@ paths:
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
 
-  /api/v1/public/lookup:
+  /api/litebans/v1/public/lookup:
     get:
       operationId: GetPublicLookup
       tags:
@@ -129,7 +129,7 @@ paths:
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
 
-  /api/v1/player/punishments/me:
+  /api/litebans/v1/player/punishments/me:
     get:
       operationId: GetPlayerPunishmentsMe
       tags:
@@ -169,7 +169,7 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
-  /api/v1/mod/punishments/list:
+  /api/litebans/v1/mod/punishments/list:
     get:
       operationId: GetModPunishmentsList
       tags:
@@ -204,7 +204,7 @@ paths:
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
 
-  /api/v1/punishments/{type}/{id}:
+  /api/litebans/v1/punishments/{type}/{id}:
     get:
       operationId: GetPunishmentByID
       tags:
