@@ -115,7 +115,7 @@ func (r *HistoryRepository) ListOffset(ctx context.Context, f UnifiedFilter, pag
 		var row PunishmentRow
 		if err := rows.Scan(
 			&typeStr, &row.ID, &row.PlayerUUID, &row.Reason, &row.ModeratorUUID, &row.ModeratorName, &row.Time,
-			&row.RemovedByUUID, &row.RemovedByName, &row.Until, &row.Removed,
+			&row.RemovedByUUID, &row.RemovedByName, &row.Until,
 			&row.RemovedByDate, &row.RemovedByReason, &row.Active, &row.Silent,
 			&row.ServerOrigin, &row.ServerScope, &row.IPBan, &row.Acknowledged,
 		); err != nil {

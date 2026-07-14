@@ -18,7 +18,6 @@ type PunishmentRow struct {
 	RemovedByName   sql.NullString
 	Time            int64
 	Until           sql.NullInt64
-	Removed         sql.NullBool
 	RemovedByDate   sql.NullInt64
 	RemovedByReason sql.NullString
 	Active          sql.NullBool

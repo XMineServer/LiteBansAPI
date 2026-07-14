@@ -37,12 +37,12 @@ func selectColumns(t domain.PunishmentType) string {
 	}
 	if hasDurationColumns(t) {
 		cols = append(cols,
-			"removed_by_uuid", "removed_by_name", "until", "removed",
+			"removed_by_uuid", "removed_by_name", "until",
 			"removed_by_date", "removed_by_reason", "active", "silent",
 		)
 	} else {
 		cols = append(cols,
-			"NULL", "NULL", "NULL", "NULL",
+			"NULL", "NULL", "NULL",
 			"NULL", "NULL", "NULL", "NULL",
 		)
 	}
@@ -70,7 +70,7 @@ func scanRow(t domain.PunishmentType, scanner interface{ Scan(...any) error }) (
 	row.Type = t
 	err := scanner.Scan(
 		&row.ID, &row.PlayerUUID, &row.Reason, &row.ModeratorUUID, &row.ModeratorName, &row.Time,
-		&row.RemovedByUUID, &row.RemovedByName, &row.Until, &row.Removed,
+		&row.RemovedByUUID, &row.RemovedByName, &row.Until,
 		&row.RemovedByDate, &row.RemovedByReason, &row.Active, &row.Silent,
 		&row.ServerOrigin, &row.ServerScope, &row.IPBan, &row.Acknowledged,
 	)
