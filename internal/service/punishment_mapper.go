@@ -30,11 +30,20 @@ func parseInt64(s string) (int64, error) {
 	return strconv.ParseInt(s, 10, 64)
 }
 
+// namePtrFromMap looks up uuid in a batch-resolved name map, returning nil if absent/empty.
+func namePtrFromMap(names map[string]string, uuid string) *string {
+	if name, ok := names[uuid]; ok && name != "" {
+		return &name
+	}
+	return nil
+}
+
 // toDomain maps any punishment row (BanRow/MuteRow/WarningRow/KickRow/UnifiedRow) to the API
 // domain shape. Removal and acknowledgement info aren't part of the shared PunishmentBase (kicks
 // have no removed_by_* columns, only warnings have "warned"), so those are pulled out per concrete
-// row type below.
-func (s *PunishmentService) toDomain(ctx context.Context, row repository.Punishment, now int64) (domain.Punishment, error) {
+// row type below. playerNames is a batch-resolved uuid->name map (see PunishmentService.toList)
+// so a list of N rows costs one name-history query, not N.
+func (s *PunishmentService) toDomain(ctx context.Context, row repository.Punishment, now int64, playerNames map[string]string) (domain.Punishment, error) {
 	base := row.Base()
 	t := domain.PunishmentType(row.Type())
 
@@ -53,10 +62,12 @@ func (s *PunishmentService) toDomain(ctx context.Context, row repository.Punishm
 		id = s.idObfuscator.Encode(t, base.ID)
 	}
 
+	playerUUID := nullStringValue(base.UUID)
 	item := domain.Punishment{
 		ID:           id,
 		Type:         t,
-		PlayerUUID:   nullStringValue(base.UUID),
+		PlayerUUID:   playerUUID,
+		PlayerName:   namePtrFromMap(playerNames, playerUUID),
 		Reason:       reason,
 		Moderator:    moderator,
 		IssuedAt:     base.Time,

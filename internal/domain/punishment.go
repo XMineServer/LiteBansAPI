@@ -48,6 +48,7 @@ type Punishment struct {
 	ID           any            `json:"id"`
 	Type         PunishmentType `json:"type"`
 	PlayerUUID   string         `json:"playerUuid"`
+	PlayerName   *string        `json:"playerName"`
 	Reason       string         `json:"reason"`
 	Moderator    Moderator      `json:"moderator"`
 	IssuedAt     int64          `json:"issuedAt"`

@@ -109,10 +109,34 @@ func unifiedRowsToPunishments(rows []repository.UnifiedRow) []repository.Punishm
 	return out
 }
 
+// distinctPlayerUUIDs collects the unique, non-empty player uuids across a page of rows, for a
+// single batched name-history lookup instead of one query per row.
+func distinctPlayerUUIDs(rows []repository.Punishment) []string {
+	seen := make(map[string]struct{}, len(rows))
+	uuids := make([]string, 0, len(rows))
+	for _, row := range rows {
+		uuid := nullStringValue(row.Base().UUID)
+		if uuid == "" {
+			continue
+		}
+		if _, ok := seen[uuid]; ok {
+			continue
+		}
+		seen[uuid] = struct{}{}
+		uuids = append(uuids, uuid)
+	}
+	return uuids
+}
+
 func (s *PunishmentService) toList(ctx context.Context, rows []repository.Punishment, total int64, page, pageSize int, now int64) (domain.PunishmentList, error) {
+	playerNames, err := s.players.ResolveNames(ctx, distinctPlayerUUIDs(rows))
+	if err != nil {
+		return domain.PunishmentList{}, domain.NewServiceUnavailable("failed to resolve player names", err)
+	}
+
 	items := make([]domain.Punishment, 0, len(rows))
 	for _, row := range rows {
-		item, err := s.toDomain(ctx, row, now)
+		item, err := s.toDomain(ctx, row, now, playerNames)
 		if err != nil {
 			return domain.PunishmentList{}, domain.NewServiceUnavailable("failed to resolve punishment", err)
 		}
@@ -244,7 +268,11 @@ func (s *PunishmentService) GetByID(ctx context.Context, t domain.PunishmentType
 	}
 
 	now := time.Now().UnixMilli()
-	item, err := s.toDomain(ctx, row, now)
+	playerNames, err := s.players.ResolveNames(ctx, distinctPlayerUUIDs([]repository.Punishment{row}))
+	if err != nil {
+		return domain.Punishment{}, domain.NewServiceUnavailable("failed to resolve player name", err)
+	}
+	item, err := s.toDomain(ctx, row, now, playerNames)
 	if err != nil {
 		return domain.Punishment{}, domain.NewServiceUnavailable("failed to resolve punishment", err)
 	}

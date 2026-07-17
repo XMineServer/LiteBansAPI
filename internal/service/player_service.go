@@ -64,6 +64,13 @@ func (s *PlayerService) ResolveModerator(ctx context.Context, uuid string, snaps
 	return domain.Moderator{UUID: &uuid, Name: namePtr, IsConsole: false}, nil
 }
 
+// ResolveNames batch-resolves the most recent display name for each of the given uuids, used to
+// populate Punishment.PlayerName across a whole list in one query instead of one per row.
+// uuids that don't resolve to a name are simply absent from the returned map.
+func (s *PlayerService) ResolveNames(ctx context.Context, uuids []string) (map[string]string, error) {
+	return s.historyRepo.LatestNamesByUUIDs(ctx, uuids)
+}
+
 // ResolvePlayerByUUID resolves a Player identity for the /players/lookup endpoint given a uuid.
 func (s *PlayerService) ResolvePlayerByUUID(ctx context.Context, uuid string) (domain.Player, bool, error) {
 	name, err := s.historyRepo.LatestNameByUUID(ctx, uuid)

@@ -30,6 +30,7 @@ func toAPIPunishment(p domain.Punishment) api.Punishment {
 		Id:           p.ID,
 		Type:         api.PunishmentType(p.Type),
 		PlayerUuid:   p.PlayerUUID,
+		PlayerName:   p.PlayerName,
 		Reason:       p.Reason,
 		Moderator:    toAPIModerator(p.Moderator),
 		IssuedAt:     p.IssuedAt,

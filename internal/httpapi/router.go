@@ -31,7 +31,7 @@ func NewRouter(
 	policy := middleware.AuthPolicy{
 		Default: []middleware.AuthStep{authComp.RequireJWT()},
 		Rules: []middleware.AuthRule{
-			{Operations: []string{"GetPublicPunishments", "GetPublicPunishmentsStats", "GetPublicLookup", "GetPublicPunishmentByID"}, Chain: []middleware.AuthStep{middleware.AllowAnonymous}},
+			{Operations: []string{"GetPublicPunishments", "GetPublicPunishmentsStats", "GetPublicLookup", "PostPublicLookupBatch", "GetPublicPunishmentByID"}, Chain: []middleware.AuthStep{middleware.AllowAnonymous}},
 			{Operations: []string{
 				"GetPlayerPunishmentsMe", "GetPlayerPunishmentsMeBan", "GetPlayerPunishmentsMeMute",
 				"GetPlayerPunishmentsMeWarning", "GetPlayerPunishmentsMeKick", "GetPlayerPunishmentByID",

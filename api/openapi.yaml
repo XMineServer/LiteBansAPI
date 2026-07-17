@@ -127,6 +127,38 @@ paths:
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
 
+  /api/litebans/v1/public/lookup/batch:
+    post:
+      operationId: PostPublicLookupBatch
+      tags:
+        - Public
+      summary: Батч-резолвинг имён по списку uuid
+      description: |
+        Без авторизации. Резолвит имена сразу для многих игроков одним запросом — например,
+        для набора `playerUuid`/`moderator.uuid` из списка наказаний — вместо N обращений к
+        `/public/lookup`. `Punishment.playerName` уже резолвится сервером автоматически;
+        этот эндпоинт нужен, когда на клиенте есть свои uuid, которые ещё не резолвлены
+        (например, `moderator.uuid` из разных записей).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LookupBatchRequest"
+      responses:
+        "200":
+          description: Успех
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LookupBatchResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
   /api/litebans/v1/public/punishments/{type}/{id}:
     get:
       operationId: GetPublicPunishmentByID
@@ -651,6 +683,31 @@ components:
         offlineMode:
           type: boolean
 
+    LookupBatchRequest:
+      type: object
+      required: [uuids]
+      properties:
+        uuids:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items:
+            type: string
+          description: Список uuid для резолвинга (32- или 36-символьный формат, как и везде). Дубликаты и порядок не важны.
+
+    LookupBatchResponse:
+      type: object
+      required: [players]
+      properties:
+        players:
+          type: object
+          additionalProperties:
+            type: string
+          description: |
+            Отображение `uuid` (в каноническом виде, с тире, в нижнем регистре) → текущее имя
+            игрока. UUID, для которых имя не резолвится по истории имён, в объекте
+            отсутствуют — это не ошибка.
+
     Removed:
       type: object
       required: [by, at, expiredAutomatically]
@@ -673,7 +730,7 @@ components:
 
     Punishment:
       type: object
-      required: [id, type, playerUuid, reason, moderator, issuedAt, serverOrigin]
+      required: [id, type, playerUuid, playerName, reason, moderator, issuedAt, serverOrigin]
       description: |
         Наказание одного из четырёх типов: ban / mute / warning / kick. У записей с
         `type: kick` отсутствуют поля длительности и снятия — см. описания полей
@@ -692,7 +749,10 @@ components:
           enum: [ban, mute, warning, kick]
         playerUuid:
           type: string
-          description: Просто строка, без резолвленного имени; для имени использовать `/public/lookup?uuid=...`.
+        playerName:
+          type: string
+          nullable: true
+          description: Текущее имя игрока по истории имён (уже резолвлено сервером); `null`, если имя не резолвится.
         reason:
           type: string
         moderator:

@@ -76,7 +76,7 @@ The container exposes port `8080`.
 
 The OpenAPI specification lives at `api/openapi.yaml` and is the source of truth for the HTTP contract. It is published to the [XMineDocs](https://github.com/XMineServer/XMineDocs) repository by the `publish-spec` GitHub workflow. Endpoint groups:
 
-- **Public** (`/api/v1/public/*`) — active bans only (no other type is exposed publicly), aggregate punishment stats, and identity lookup by name or UUID.
+- **Public** (`/api/v1/public/*`) — active bans only (no other type is exposed publicly), aggregate punishment stats, and identity lookup by name or UUID (single or batch). Every `Punishment` already includes a resolved `playerName`; the batch lookup endpoint is for resolving other uuids client-side (e.g. moderator uuids) without N+1 calls.
 - **Player** (`/api/v1/player/*`, JWT) — the caller's own punishments, across all types or filtered to one type.
 - **Moderator** (`/api/v1/mod/*`, moderator permission) — full punishments listing across all players/moderators, across all types or filtered to one type.
 - **Detail** (`/api/v1/{public,player,mod}/punishments/{type}/{id}`) — single-punishment lookup by type and id; one endpoint per access tier, each with its own visibility rule (public: active bans only; player: own records of any type plus any active ban; moderator: unrestricted).

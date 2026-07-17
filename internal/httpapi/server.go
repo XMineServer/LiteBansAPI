@@ -138,6 +138,42 @@ func (s *Server) GetPublicLookup(ctx context.Context, request api.GetPublicLooku
 	return api.GetPublicLookup200JSONResponse(toAPIPlayer(result)), nil
 }
 
+// maxLookupBatchSize caps PostPublicLookupBatch requests to keep the underlying IN (...) query
+// (and the request body) reasonably sized.
+const maxLookupBatchSize = 200
+
+// PostPublicLookupBatch handles POST /public/lookup/batch: uuid->name resolution for many
+// players in one query, to avoid N+1 lookups on the client side. Unresolvable uuids are simply
+// omitted from the response rather than causing an error.
+func (s *Server) PostPublicLookupBatch(ctx context.Context, request api.PostPublicLookupBatchRequestObject) (api.PostPublicLookupBatchResponseObject, error) {
+	if request.Body == nil || len(request.Body.Uuids) == 0 {
+		return nil, domain.NewInvalidParameter("uuids must not be empty")
+	}
+	if len(request.Body.Uuids) > maxLookupBatchSize {
+		return nil, domain.NewInvalidParameter("uuids must not contain more than 200 items")
+	}
+
+	seen := make(map[string]struct{}, len(request.Body.Uuids))
+	uuids := make([]string, 0, len(request.Body.Uuids))
+	for _, raw := range request.Body.Uuids {
+		normalized, err := NormalizeUUID(raw)
+		if err != nil {
+			return nil, err
+		}
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		uuids = append(uuids, normalized)
+	}
+
+	names, err := s.playerSvc.ResolveNames(ctx, uuids)
+	if err != nil {
+		return nil, domain.NewServiceUnavailable("failed to resolve players", err)
+	}
+	return api.PostPublicLookupBatch200JSONResponse{Players: names}, nil
+}
+
 // GetPublicPunishmentByID handles GET /public/punishments/{type}/{id}: only active bans are
 // visible; anything else (wrong type, inactive/removed ban) 404s like a missing record.
 func (s *Server) GetPublicPunishmentByID(ctx context.Context, request api.GetPublicPunishmentByIDRequestObject) (api.GetPublicPunishmentByIDResponseObject, error) {
