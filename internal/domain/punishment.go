@@ -10,23 +10,7 @@ const (
 	TypeKick    PunishmentType = "kick"
 )
 
-// ParsePunishmentType maps a URL path segment (plural, e.g. "bans") to a PunishmentType.
-func ParsePunishmentType(pathSegment string) (PunishmentType, bool) {
-	switch pathSegment {
-	case "bans":
-		return TypeBan, true
-	case "mutes":
-		return TypeMute, true
-	case "warnings":
-		return TypeWarning, true
-	case "kicks":
-		return TypeKick, true
-	default:
-		return "", false
-	}
-}
-
-// ParsePunishmentTypeSingular maps a query parameter value (singular, e.g. "ban") to a PunishmentType.
+// ParsePunishmentTypeSingular maps a path/query parameter value (e.g. "ban") to a PunishmentType.
 func ParsePunishmentTypeSingular(value string) (PunishmentType, bool) {
 	switch PunishmentType(value) {
 	case TypeBan, TypeMute, TypeWarning, TypeKick:

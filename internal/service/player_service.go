@@ -39,8 +39,8 @@ func IsOfflineMode(uuid string) bool {
 // ResolveModerator resolves the moderator/remover identity for a punishment row's banned_by_*
 // or removed_by_* columns, per TOR 3.4/6.4: console aliases skip NameHistory lookup entirely,
 // otherwise the current name is resolved via history with the stored snapshot as fallback.
-func (s *PlayerService) ResolveModerator(ctx context.Context, uuid sql.NullString, snapshotName sql.NullString) (domain.Moderator, error) {
-	if !uuid.Valid || uuid.String == "" || (snapshotName.Valid && s.isAliasName(snapshotName.String)) {
+func (s *PlayerService) ResolveModerator(ctx context.Context, uuid string, snapshotName sql.NullString) (domain.Moderator, error) {
+	if uuid == "" || (snapshotName.Valid && s.isAliasName(snapshotName.String)) {
 		var namePtr *string
 		if snapshotName.Valid {
 			n := snapshotName.String
@@ -49,8 +49,7 @@ func (s *PlayerService) ResolveModerator(ctx context.Context, uuid sql.NullStrin
 		return domain.Moderator{UUID: nil, Name: namePtr, IsConsole: true}, nil
 	}
 
-	uuidVal := uuid.String
-	resolved, err := s.historyRepo.LatestNameByUUID(ctx, uuidVal)
+	resolved, err := s.historyRepo.LatestNameByUUID(ctx, uuid)
 	if err != nil {
 		return domain.Moderator{}, err
 	}
@@ -62,7 +61,7 @@ func (s *PlayerService) ResolveModerator(ctx context.Context, uuid sql.NullStrin
 	if name != "" {
 		namePtr = &name
 	}
-	return domain.Moderator{UUID: &uuidVal, Name: namePtr, IsConsole: false}, nil
+	return domain.Moderator{UUID: &uuid, Name: namePtr, IsConsole: false}, nil
 }
 
 // ResolvePlayerByUUID resolves a Player identity for the /players/lookup endpoint given a uuid.

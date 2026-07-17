@@ -23,19 +23,23 @@ func NewRouter(
 	playerSvc *service.PlayerService,
 	authComp *middleware.Auth,
 	authorityClient *auth.AuthorityClient,
-	publicTypes []string,
 	modPermission string,
 	log *slog.Logger,
 ) http.Handler {
-	srv := NewServer(punishmentSvc, playerSvc, authorityClient, publicTypes, modPermission)
+	srv := NewServer(punishmentSvc, playerSvc, authorityClient, modPermission)
 
 	policy := middleware.AuthPolicy{
 		Default: []middleware.AuthStep{authComp.RequireJWT()},
 		Rules: []middleware.AuthRule{
-			{Operations: []string{"GetPublicPunishments", "GetPublicPunishmentsStats", "GetPublicLookup"}, Chain: []middleware.AuthStep{middleware.AllowAnonymous}},
-			{Operations: []string{"GetPlayerPunishmentsMe"}, Chain: []middleware.AuthStep{authComp.RequireJWT()}},
-			{Operations: []string{"GetModPunishmentsList"}, Chain: []middleware.AuthStep{authComp.RequireJWT(), authComp.RequireModPermission()}},
-			{Operations: []string{"GetPunishmentByID"}, Chain: []middleware.AuthStep{authComp.OptionalJWT()}},
+			{Operations: []string{"GetPublicPunishments", "GetPublicPunishmentsStats", "GetPublicLookup", "GetPublicPunishmentByID"}, Chain: []middleware.AuthStep{middleware.AllowAnonymous}},
+			{Operations: []string{
+				"GetPlayerPunishmentsMe", "GetPlayerPunishmentsMeBan", "GetPlayerPunishmentsMeMute",
+				"GetPlayerPunishmentsMeWarning", "GetPlayerPunishmentsMeKick", "GetPlayerPunishmentByID",
+			}, Chain: []middleware.AuthStep{authComp.RequireJWT()}},
+			{Operations: []string{
+				"GetModPunishments", "GetModPunishmentsBan", "GetModPunishmentsMute",
+				"GetModPunishmentsWarning", "GetModPunishmentsKick", "GetModPunishmentByID",
+			}, Chain: []middleware.AuthStep{authComp.RequireJWT(), authComp.RequireModPermission()}},
 		},
 	}
 

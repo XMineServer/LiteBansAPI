@@ -8,8 +8,7 @@ info:
     Базовый префикс всех путей: `/api/v1`. Это read-only API (нет методов на создание/изменение данных).
 
     Введены три уровня доступа: **аноним** (`/public/*`), **игрок** (`/player/*`, требует JWT) и
-    **модератор** (`/mod/*`, требует JWT + право `web.litebans.view.all`). Контекстный эндпоинт
-    `GET /punishments/{type}/{id}` доступен всем, но авторизуется по содержимому записи.
+    **модератор** (`/mod/*`, требует JWT + право `web.litebans.view.all`).
 
     ## Общие положения
 
@@ -18,6 +17,9 @@ info:
     - uuid принимается и в виде с тире, и без — но в ответах сервис всегда возвращает канонический вид с тире, в нижнем регистре.
     - Все списочные эндпоинты используют **офсетную** пагинацию (`page`/`pageSize`) и возвращают `PunishmentList`.
     - Авторизация — заголовком `Authorization: Bearer <JWT>`. JWT выпускается Identity Service (RS256), проверяются `iss` и `exp`; uuid игрока берётся из `sub`.
+    - Списочные эндпоинты без `{type}` в пути (`/player/punishments/me`, `/mod/punishments`) возвращают вперемешку все 4 типа наказаний, различать по полю `type` в `Punishment`.
+    - Для доступа к одному наказанию по id есть три параллельных эндпоинта — `/public/punishments/{type}/{id}`,
+      `/player/punishments/{type}/{id}`, `/mod/punishments/{type}/{id}` — отличаются только тем, какие записи видны вызывающему.
 
 tags:
   - name: Public
@@ -26,8 +28,6 @@ tags:
     description: Наказания текущего авторизованного игрока (требует JWT).
   - name: Moderation
     description: Полные списки наказаний по всем игрокам (требует право модератора).
-  - name: Punishments
-    description: Получение одного наказания, авторизация по содержимому записи.
 
 paths:
   /api/litebans/v1/public/punishments:
@@ -35,21 +35,19 @@ paths:
       operationId: GetPublicPunishments
       tags:
         - Public
-      summary: Список публично видимых наказаний одного типа
+      summary: Список активных банов
       description: |
-        Без авторизации.
+        Без авторизации. Всегда возвращает только активные (не тихие) баны — без параметра `type`,
+        `active` или `silent`: они здесь не настраиваются.
 
         ```
-        GET /api/v1/public/punishments?page=1&pageSize=20&active=true
+        GET /api/v1/public/punishments?page=1&pageSize=20
         ```
       parameters:
-        - $ref: "#/components/parameters/TypeQuery"
-        - $ref: "#/components/parameters/Page"
-        - $ref: "#/components/parameters/PageSize"
-        - $ref: "#/components/parameters/Active"
-        - $ref: "#/components/parameters/Silent"
         - $ref: "#/components/parameters/PlayerUuid"
         - $ref: "#/components/parameters/ModeratorUuid"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
       responses:
         "200":
           description: Успех
@@ -129,6 +127,38 @@ paths:
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
 
+  /api/litebans/v1/public/punishments/{type}/{id}:
+    get:
+      operationId: GetPublicPunishmentByID
+      tags:
+        - Public
+      summary: Получение одного наказания по типу и id (только активные баны)
+      description: |
+        Без авторизации. Отдаёт запись только если это бан **и** он сейчас активен — во всех
+        остальных случаях (иной тип, снятый/истёкший бан) отвечает `404`, тем же кодом, что и при
+        отсутствии записи.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/TypePath"
+        - $ref: "#/components/parameters/IdPath"
+      responses:
+        "200":
+          description: Успех
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Punishment"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          description: Запись не найдена, либо не является активным баном.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
   /api/litebans/v1/player/punishments/me:
     get:
       operationId: GetPlayerPunishmentsMe
@@ -139,20 +169,9 @@ paths:
       security:
         - bearerAuth: []
       parameters:
-        - $ref: "#/components/parameters/TypeSingularQuery"
         - $ref: "#/components/parameters/ModeratorUuid"
-        - name: before
-          in: query
-          description: Нижняя граница `issuedAt` (включительно), unix ms.
-          schema:
-            type: integer
-            format: int64
-        - name: after
-          in: query
-          description: Верхняя граница `issuedAt` (включительно), unix ms.
-          schema:
-            type: integer
-            format: int64
+        - $ref: "#/components/parameters/Before"
+        - $ref: "#/components/parameters/After"
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
       responses:
@@ -169,17 +188,163 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
-  /api/litebans/v1/mod/punishments/list:
+  /api/litebans/v1/player/punishments/me/ban:
     get:
-      operationId: GetModPunishmentsList
+      operationId: GetPlayerPunishmentsMeBan
+      tags:
+        - Player
+      summary: Баны текущего игрока
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ModeratorUuid"
+        - $ref: "#/components/parameters/Before"
+        - $ref: "#/components/parameters/After"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: Успех
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PunishmentList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/litebans/v1/player/punishments/me/mute:
+    get:
+      operationId: GetPlayerPunishmentsMeMute
+      tags:
+        - Player
+      summary: Муты текущего игрока
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ModeratorUuid"
+        - $ref: "#/components/parameters/Before"
+        - $ref: "#/components/parameters/After"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: Успех
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PunishmentList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/litebans/v1/player/punishments/me/warning:
+    get:
+      operationId: GetPlayerPunishmentsMeWarning
+      tags:
+        - Player
+      summary: Предупреждения текущего игрока
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ModeratorUuid"
+        - $ref: "#/components/parameters/Before"
+        - $ref: "#/components/parameters/After"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: Успех
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PunishmentList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/litebans/v1/player/punishments/me/kick:
+    get:
+      operationId: GetPlayerPunishmentsMeKick
+      tags:
+        - Player
+      summary: Кики текущего игрока
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ModeratorUuid"
+        - $ref: "#/components/parameters/Before"
+        - $ref: "#/components/parameters/After"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: Успех
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PunishmentList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/litebans/v1/player/punishments/{type}/{id}:
+    get:
+      operationId: GetPlayerPunishmentByID
+      tags:
+        - Player
+      summary: Получение одного наказания по типу и id (свои наказания + все активные баны)
+      description: |
+        Требует JWT. Отдаёт запись, если она принадлежит вызывающему игроку (uuid совпадает с
+        `sub` из токена) — любого типа, — либо если это активный бан (независимо от владельца).
+        Во всех остальных случаях — `404`, тем же кодом, что и при отсутствии записи.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/TypePath"
+        - $ref: "#/components/parameters/IdPath"
+      responses:
+        "200":
+          description: Успех
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Punishment"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Запись не найдена, либо принадлежит другому игроку и не является активным баном.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/litebans/v1/mod/punishments:
+    get:
+      operationId: GetModPunishments
       tags:
         - Moderation
-      summary: Полный список наказаний по всем игрокам и модераторам
+      summary: Полный список наказаний по всем игрокам и модераторам (все типы)
       description: Требует право `web.litebans.view.all`.
       security:
         - bearerAuth: []
       parameters:
-        - $ref: "#/components/parameters/TypeSingularQuery"
         - $ref: "#/components/parameters/PlayerUuid"
         - $ref: "#/components/parameters/ModeratorUuid"
         - $ref: "#/components/parameters/Active"
@@ -204,37 +369,154 @@ paths:
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
 
-  /api/litebans/v1/punishments/{type}/{id}:
+  /api/litebans/v1/mod/punishments/ban:
     get:
-      operationId: GetPunishmentByID
+      operationId: GetModPunishmentsBan
       tags:
-        - Punishments
-      summary: Получение одного наказания по типу и id
-      description: |
-        Доступность записи зависит от типа и содержимого: публично разрешённые типы
-        (например `bans`) отдаются без JWT; для остальных нужен валидный JWT, и
-        доступ есть либо владельцу записи (uuid совпадает с `sub` из токена), либо
-        вызывающему с правом `web.litebans.view.all`.
-
-        Возвращает запись независимо от её текущей видимости (активна, тиха,
-        неактивна).
+        - Moderation
+      summary: Список банов по всем игрокам и модераторам
+      description: Требует право `web.litebans.view.all`.
       security:
-        - {}
         - bearerAuth: []
       parameters:
-        - name: type
-          in: path
-          required: true
-          description: Тип наказания, во множественном числе (в отличие от query-параметра `type` других эндпоинтов).
-          schema:
-            type: string
-            enum: [bans, mutes, warnings, kicks]
-        - name: id
-          in: path
-          required: true
-          description: Значение поля `id` объекта `Punishment` — передавать как есть, без преобразований (см. описание схемы `Punishment.id`).
-          schema:
-            type: string
+        - $ref: "#/components/parameters/PlayerUuid"
+        - $ref: "#/components/parameters/ModeratorUuid"
+        - $ref: "#/components/parameters/Active"
+        - $ref: "#/components/parameters/Silent"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: Успех
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PunishmentList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /api/litebans/v1/mod/punishments/mute:
+    get:
+      operationId: GetModPunishmentsMute
+      tags:
+        - Moderation
+      summary: Список мутов по всем игрокам и модераторам
+      description: Требует право `web.litebans.view.all`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PlayerUuid"
+        - $ref: "#/components/parameters/ModeratorUuid"
+        - $ref: "#/components/parameters/Active"
+        - $ref: "#/components/parameters/Silent"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: Успех
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PunishmentList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /api/litebans/v1/mod/punishments/warning:
+    get:
+      operationId: GetModPunishmentsWarning
+      tags:
+        - Moderation
+      summary: Список предупреждений по всем игрокам и модераторам
+      description: Требует право `web.litebans.view.all`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PlayerUuid"
+        - $ref: "#/components/parameters/ModeratorUuid"
+        - $ref: "#/components/parameters/Active"
+        - $ref: "#/components/parameters/Silent"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: Успех
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PunishmentList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /api/litebans/v1/mod/punishments/kick:
+    get:
+      operationId: GetModPunishmentsKick
+      tags:
+        - Moderation
+      summary: Список киков по всем игрокам и модераторам
+      description: Требует право `web.litebans.view.all`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PlayerUuid"
+        - $ref: "#/components/parameters/ModeratorUuid"
+        - $ref: "#/components/parameters/Active"
+        - $ref: "#/components/parameters/Silent"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: Успех
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PunishmentList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /api/litebans/v1/mod/punishments/{type}/{id}:
+    get:
+      operationId: GetModPunishmentByID
+      tags:
+        - Moderation
+      summary: Получение одного наказания по типу и id (любое наказание)
+      description: Требует право `web.litebans.view.all`. Возвращает запись независимо от её текущей видимости (активна, тиха, неактивна) и владельца.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/TypePath"
+        - $ref: "#/components/parameters/IdPath"
       responses:
         "200":
           description: Успех
@@ -244,12 +526,12 @@ paths:
                 $ref: "#/components/schemas/Punishment"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
-          description: Запись не найдена, либо принадлежит другому игроку и недоступна вызывающему (тот же код, что и при отсутствии записи).
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
+          $ref: "#/components/responses/NotFound"
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -262,19 +544,21 @@ components:
       description: JWT, выданный Identity Service (RS256). Используется для идентификации игрока.
 
   parameters:
-    TypeQuery:
+    TypePath:
       name: type
-      in: query
-      description: Один из разрешённых публичных типов наказаний; по умолчанию `ban`. Значение вне списка разрешённых → `400 INVALID_PARAMETER`.
-      schema:
-        type: string
-    TypeSingularQuery:
-      name: type
-      in: query
-      description: Тип наказания. Без параметра — все типы вперемешку.
+      in: path
+      required: true
+      description: Тип наказания.
       schema:
         type: string
         enum: [ban, mute, warning, kick]
+    IdPath:
+      name: id
+      in: path
+      required: true
+      description: Значение поля `id` объекта `Punishment` — передавать как есть, без преобразований (см. описание схемы `Punishment.id`).
+      schema:
+        type: string
     Page:
       name: page
       in: query
@@ -319,6 +603,20 @@ components:
       description: Фильтр по модератору (кто выдал наказание).
       schema:
         type: string
+    Before:
+      name: before
+      in: query
+      description: Верхняя граница `issuedAt` (исключительно) — вернутся записи, выданные раньше этого момента, unix ms.
+      schema:
+        type: integer
+        format: int64
+    After:
+      name: after
+      in: query
+      description: Нижняя граница `issuedAt` (исключительно) — вернутся записи, выданные позже этого момента, unix ms.
+      schema:
+        type: integer
+        format: int64
 
   schemas:
     Moderator:
@@ -380,15 +678,15 @@ components:
         Наказание одного из четырёх типов: ban / mute / warning / kick. У записей с
         `type: kick` отсутствуют поля длительности и снятия — см. описания полей
         `expiresAt`, `permanent`, `active`, `expired`, `ipBan`, `silent`,
-        `serverScope`, `removed`, `acknowledged`. В списках, где `type` не указан в
-        запросе (`/player/punishments/me`, `/mod/punishments/list`), `items` —
-        union всех 4 типов, различать по полю `type`.
+        `serverScope`, `removed`, `acknowledged`. В списках без `{type}` в пути
+        (`/player/punishments/me`, `/mod/punishments`) — `items` union всех 4 типов,
+        различать по полю `type`.
       properties:
         id:
           description: |
             Идентификатор наказания: число либо (при включённой на сервере
             обфускации id) непрозрачная строка-токен. Токен привязан к конкретному
-            `type` — id, полученный для `bans`, нельзя использовать в `mutes`.
+            `type` — id, полученный для `ban`, нельзя использовать в `mute`.
         type:
           type: string
           enum: [ban, mute, warning, kick]
@@ -496,8 +794,8 @@ components:
         | HTTP | `error` | Когда |
         |---|---|---|
         | 400 | `INVALID_UUID` | некорректный формат uuid (не 32/36 hex-символов) |
-        | 400 | `INVALID_TYPE` | `{type}` не из набора `bans/mutes/warnings/kicks` |
-        | 400 | `INVALID_PARAMETER` | некорректная пагинация, булево значение, имя игрока, `type` вне разрешённого набора, или некорректная комбинация параметров `/public/lookup` |
+        | 400 | `INVALID_TYPE` | `{type}` не из набора `ban/mute/warning/kick` |
+        | 400 | `INVALID_PARAMETER` | некорректная пагинация, булево значение, имя игрока, или некорректная комбинация параметров `/public/lookup` |
         | 401 | `UNAUTHORIZED` | требуется JWT, но он отсутствует/невалиден/истёк |
         | 403 | `FORBIDDEN` | JWT валиден, но нет права `web.litebans.view.all` |
         | 404 | `NOT_FOUND` | наказание/игрок не найден, либо запись существует, но недоступна вызывающему |

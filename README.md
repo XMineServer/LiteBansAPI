@@ -45,8 +45,7 @@ Configuration is read from environment variables (see `internal/config/config.go
 | `AUTHORITY_API_URL` | Yes | — | Base URL of the Authority service. |
 | `AUTHORITY_CACHE_TTL` | No | `60s` | TTL for cached Authority permission results. |
 | `INTERNAL_TOKEN` | Yes | — | Shared secret authenticating internal calls to Authority. |
-| `MOD_PERMISSION` | No | `web.litebans.view.all` | Permission required for the moderator endpoint. |
-| `PUBLIC_TYPES` | No | `ban` | Punishment types exposed publicly (subset of `ban`, `mute`, `warning`, `kick`). |
+| `MOD_PERMISSION` | No | `web.litebans.view.all` | Permission required for the moderator endpoints. |
 | `HTTP_ADDR` | No | `:8080` | HTTP listen address. |
 | `LOG_LEVEL` | No | `info` | slog level (`debug`, `info`, `warn`, `error`). |
 | `LOG_FORMAT` | No | `text` | Log output format (`json` or `text`). |
@@ -77,10 +76,10 @@ The container exposes port `8080`.
 
 The OpenAPI specification lives at `api/openapi.yaml` and is the source of truth for the HTTP contract. It is published to the [XMineDocs](https://github.com/XMineServer/XMineDocs) repository by the `publish-spec` GitHub workflow. Endpoint groups:
 
-- **Public** (`/api/v1/public/*`) — list publicly visible punishments of a whitelisted type, aggregate punishment stats, and identity lookup by name or UUID.
-- **Player** (`/api/v1/player/*`, JWT) — the caller's own punishments across all types.
-- **Moderator** (`/api/v1/mod/*`, moderator permission) — full punishments listing across all players/moderators.
-- **Detail** (`/api/v1/punishments/{type}/{id}`) — contextual single-punishment lookup; JWT optional, authorized after load.
+- **Public** (`/api/v1/public/*`) — active bans only (no other type is exposed publicly), aggregate punishment stats, and identity lookup by name or UUID.
+- **Player** (`/api/v1/player/*`, JWT) — the caller's own punishments, across all types or filtered to one type.
+- **Moderator** (`/api/v1/mod/*`, moderator permission) — full punishments listing across all players/moderators, across all types or filtered to one type.
+- **Detail** (`/api/v1/{public,player,mod}/punishments/{type}/{id}`) — single-punishment lookup by type and id; one endpoint per access tier, each with its own visibility rule (public: active bans only; player: own records of any type plus any active ban; moderator: unrestricted).
 
 Refer to the spec for request/response schemas and authentication requirements.
 

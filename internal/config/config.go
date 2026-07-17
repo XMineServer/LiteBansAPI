@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log/slog"
 	"time"
-	"xmine/litebans-api/internal/domain"
 	"xmine/litebans-api/internal/logging"
 
 	"github.com/caarlos0/env/v11"
@@ -43,7 +42,6 @@ type Config struct {
 	AuthorityAPIURL   string        `env:"AUTHORITY_API_URL,required"`
 	InternalToken     string        `env:"INTERNAL_TOKEN,required"`
 	ModPermission     string        `env:"MOD_PERMISSION" envDefault:"web.litebans.view.all"`
-	PublicTypes       []string      `env:"PUBLIC_TYPES" envSeparator:"," envDefault:"ban"`
 	AuthorityCacheTTL time.Duration `env:"AUTHORITY_CACHE_TTL" envDefault:"60s"`
 }
 
@@ -71,22 +69,5 @@ func (c Config) validate() error {
 	if c.MaxPageSize <= 0 || c.MaxPageSize < c.DefaultPageSize {
 		return fmt.Errorf("MAX_PAGE_SIZE must be positive and >= DEFAULT_PAGE_SIZE")
 	}
-	if len(c.PublicTypes) == 0 {
-		return fmt.Errorf("PUBLIC_TYPES must not be empty")
-	}
-	for _, pt := range c.PublicTypes {
-		if !isValidPunishmentTypeName(pt) {
-			return fmt.Errorf("PUBLIC_TYPES contains invalid type %q: must be one of ban, mute, warning, kick", pt)
-		}
-	}
 	return nil
-}
-
-func isValidPunishmentTypeName(name string) bool {
-	switch domain.PunishmentType(name) {
-	case domain.TypeBan, domain.TypeMute, domain.TypeWarning, domain.TypeKick:
-		return true
-	default:
-		return false
-	}
 }

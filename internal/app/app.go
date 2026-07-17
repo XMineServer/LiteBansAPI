@@ -36,7 +36,7 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger) (*App, error)
 	playerSvc := service.NewPlayerService(historyRepo, cfg.ConsoleAliases)
 	idObfuscator := service.NewIDObfuscator(cfg.ObfuscateIDs, cfg.ObfuscationSecret)
 	punishmentSvc := service.NewPunishmentService(
-		punishmentRepo, historyRepo, playerSvc, idObfuscator,
+		punishmentRepo, playerSvc, idObfuscator,
 		cfg.IncludeInactiveDefault, cfg.IncludeSilentDefault,
 		cfg.DefaultPageSize, cfg.MaxPageSize,
 	)
@@ -48,7 +48,7 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger) (*App, error)
 	authorityClient := auth.NewAuthorityClient(cfg.AuthorityAPIURL, cfg.InternalToken, cfg.AuthorityCacheTTL)
 	authComp := middleware.NewAuth(jwtValidator, authorityClient, cfg.ModPermission)
 
-	mux := httpapi.NewRouter(punishmentSvc, playerSvc, authComp, authorityClient, cfg.PublicTypes, cfg.ModPermission, log)
+	mux := httpapi.NewRouter(punishmentSvc, playerSvc, authComp, authorityClient, cfg.ModPermission, log)
 
 	server := &http.Server{
 		Addr:    cfg.HTTPAddr,

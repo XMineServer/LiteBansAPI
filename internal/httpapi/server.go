@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"slices"
 	"xmine/litebans-api/api"
 	"xmine/litebans-api/internal/auth"
 	"xmine/litebans-api/internal/domain"
@@ -15,7 +14,6 @@ type Server struct {
 	punishmentSvc *service.PunishmentService
 	playerSvc     *service.PlayerService
 	authority     *auth.AuthorityClient
-	publicTypes   []string
 	modPermission string
 }
 
@@ -23,35 +21,19 @@ func NewServer(
 	punishmentSvc *service.PunishmentService,
 	playerSvc *service.PlayerService,
 	authority *auth.AuthorityClient,
-	publicTypes []string,
 	modPermission string,
 ) *Server {
 	return &Server{
 		punishmentSvc: punishmentSvc,
 		playerSvc:     playerSvc,
 		authority:     authority,
-		publicTypes:   publicTypes,
 		modPermission: modPermission,
 	}
 }
 
-func (s *Server) isPublicType(t domain.PunishmentType) bool {
-	return slices.Contains(s.publicTypes, string(t))
-}
-
-// GetPublicPunishments handles GET /public/punishments: publicly visible punishments,
-// restricted to the PUBLIC_TYPES whitelist (defaults to "ban" only).
+// GetPublicPunishments handles GET /public/punishments: always active, non-silent bans.
 func (s *Server) GetPublicPunishments(ctx context.Context, request api.GetPublicPunishmentsRequestObject) (api.GetPublicPunishmentsResponseObject, error) {
 	p := request.Params
-
-	typeParam := s.publicTypes[0]
-	if p.Type != nil && string(*p.Type) != "" {
-		typeParam = string(*p.Type)
-	}
-	t := domain.PunishmentType(typeParam)
-	if !s.isPublicType(t) {
-		return nil, domain.NewInvalidParameter("type must be one of the publicly exposed punishment types")
-	}
 
 	playerUUID, err := normalizeOptionalUUID(p.PlayerUuid)
 	if err != nil {
@@ -62,11 +44,11 @@ func (s *Server) GetPublicPunishments(ctx context.Context, request api.GetPublic
 		return nil, err
 	}
 
-	result, err := s.punishmentSvc.List(ctx, t, service.ListParams{
+	result, err := s.punishmentSvc.ListBans(ctx, service.ListParams{
 		Page:          intPtrFrom32(p.Page),
 		PageSize:      intPtrFrom32(p.PageSize),
-		Active:        p.Active,
-		Silent:        p.Silent,
+		Active:        ptr(true),
+		Silent:        ptr(false),
 		PlayerUUID:    playerUUID,
 		ModeratorUUID: moderatorUUID,
 	})
@@ -156,6 +138,24 @@ func (s *Server) GetPublicLookup(ctx context.Context, request api.GetPublicLooku
 	return api.GetPublicLookup200JSONResponse(toAPIPlayer(result)), nil
 }
 
+// GetPublicPunishmentByID handles GET /public/punishments/{type}/{id}: only active bans are
+// visible; anything else (wrong type, inactive/removed ban) 404s like a missing record.
+func (s *Server) GetPublicPunishmentByID(ctx context.Context, request api.GetPublicPunishmentByIDRequestObject) (api.GetPublicPunishmentByIDResponseObject, error) {
+	t, ok := domain.ParsePunishmentTypeSingular(string(request.Type))
+	if !ok {
+		return nil, domain.NewInvalidType("type must be one of: ban, mute, warning, kick")
+	}
+
+	result, err := s.punishmentSvc.GetByID(ctx, t, request.Id)
+	if err != nil {
+		return nil, err
+	}
+	if t != domain.TypeBan || result.Active == nil || !*result.Active {
+		return nil, domain.NewNotFound("punishment not found")
+	}
+	return api.GetPublicPunishmentByID200JSONResponse(toAPIPunishment(result)), nil
+}
+
 // GetPlayerPunishmentsMe handles GET /player/punishments/me: the caller's own punishments
 // across all types. The player uuid always comes from the validated JWT (set by the auth
 // middleware); any playerUuid query parameter is ignored to prevent a player from viewing
@@ -167,23 +167,12 @@ func (s *Server) GetPlayerPunishmentsMe(ctx context.Context, request api.GetPlay
 	}
 
 	p := request.Params
-
-	var types []domain.PunishmentType
-	if p.Type != nil && string(*p.Type) != "" {
-		t, ok := domain.ParsePunishmentTypeSingular(string(*p.Type))
-		if !ok {
-			return nil, domain.NewInvalidParameter("type must be one of: ban, mute, warning, kick")
-		}
-		types = []domain.PunishmentType{t}
-	}
-
 	moderatorUUID, err := normalizeOptionalUUID(p.ModeratorUuid)
 	if err != nil {
 		return nil, err
 	}
 
-	result, err := s.punishmentSvc.ListUnified(ctx, service.UnifiedListParams{
-		Types:         types,
+	result, err := s.punishmentSvc.ListAll(ctx, service.ListParams{
 		Page:          intPtrFrom32(p.Page),
 		PageSize:      intPtrFrom32(p.PageSize),
 		PlayerUUID:    &uuid,
@@ -197,54 +186,70 @@ func (s *Server) GetPlayerPunishmentsMe(ctx context.Context, request api.GetPlay
 	return api.GetPlayerPunishmentsMe200JSONResponse(toAPIPunishmentList(result)), nil
 }
 
-// GetModPunishmentsList handles GET /mod/punishments/list: the full list across all
-// players/moderators. Access is already restricted to holders of the moderator
-// permission by the auth middleware.
-func (s *Server) GetModPunishmentsList(ctx context.Context, request api.GetModPunishmentsListRequestObject) (api.GetModPunishmentsListResponseObject, error) {
-	p := request.Params
-
-	var types []domain.PunishmentType
-	if p.Type != nil && string(*p.Type) != "" {
-		t, ok := domain.ParsePunishmentTypeSingular(string(*p.Type))
-		if !ok {
-			return nil, domain.NewInvalidParameter("type must be one of: ban, mute, warning, kick")
-		}
-		types = []domain.PunishmentType{t}
-	}
-
-	playerUUID, err := normalizeOptionalUUID(p.PlayerUuid)
+func (s *Server) GetPlayerPunishmentsMeBan(ctx context.Context, request api.GetPlayerPunishmentsMeBanRequestObject) (api.GetPlayerPunishmentsMeBanResponseObject, error) {
+	result, err := s.listPlayerMeByType(ctx, s.punishmentSvc.ListBans, request.Params.ModeratorUuid, request.Params.Before, request.Params.After, request.Params.Page, request.Params.PageSize)
 	if err != nil {
 		return nil, err
 	}
-	moderatorUUID, err := normalizeOptionalUUID(p.ModeratorUuid)
-	if err != nil {
-		return nil, err
-	}
-
-	result, err := s.punishmentSvc.ListUnified(ctx, service.UnifiedListParams{
-		Types:         types,
-		Page:          intPtrFrom32(p.Page),
-		PageSize:      intPtrFrom32(p.PageSize),
-		Active:        p.Active,
-		Silent:        p.Silent,
-		PlayerUUID:    playerUUID,
-		ModeratorUUID: moderatorUUID,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return api.GetModPunishmentsList200JSONResponse(toAPIPunishmentList(result)), nil
+	return api.GetPlayerPunishmentsMeBan200JSONResponse(toAPIPunishmentList(result)), nil
 }
 
-// GetPunishmentByID handles GET /punishments/{type}/{id}, the contextual endpoint shared by all
-// access levels. Authorization happens after load (load-then-authorize), since deciding
-// "own vs. someone else's" requires the record's playerUuid: public types (PUBLIC_TYPES,
-// e.g. "ban") are served to anyone; non-public types are served only to the owning player
-// or a moderator, and otherwise 404 (not 403) to avoid revealing the record's existence.
-func (s *Server) GetPunishmentByID(ctx context.Context, request api.GetPunishmentByIDRequestObject) (api.GetPunishmentByIDResponseObject, error) {
-	t, ok := domain.ParsePunishmentType(string(request.Type))
+func (s *Server) GetPlayerPunishmentsMeMute(ctx context.Context, request api.GetPlayerPunishmentsMeMuteRequestObject) (api.GetPlayerPunishmentsMeMuteResponseObject, error) {
+	result, err := s.listPlayerMeByType(ctx, s.punishmentSvc.ListMutes, request.Params.ModeratorUuid, request.Params.Before, request.Params.After, request.Params.Page, request.Params.PageSize)
+	if err != nil {
+		return nil, err
+	}
+	return api.GetPlayerPunishmentsMeMute200JSONResponse(toAPIPunishmentList(result)), nil
+}
+
+func (s *Server) GetPlayerPunishmentsMeWarning(ctx context.Context, request api.GetPlayerPunishmentsMeWarningRequestObject) (api.GetPlayerPunishmentsMeWarningResponseObject, error) {
+	result, err := s.listPlayerMeByType(ctx, s.punishmentSvc.ListWarnings, request.Params.ModeratorUuid, request.Params.Before, request.Params.After, request.Params.Page, request.Params.PageSize)
+	if err != nil {
+		return nil, err
+	}
+	return api.GetPlayerPunishmentsMeWarning200JSONResponse(toAPIPunishmentList(result)), nil
+}
+
+func (s *Server) GetPlayerPunishmentsMeKick(ctx context.Context, request api.GetPlayerPunishmentsMeKickRequestObject) (api.GetPlayerPunishmentsMeKickResponseObject, error) {
+	result, err := s.listPlayerMeByType(ctx, s.punishmentSvc.ListKicks, request.Params.ModeratorUuid, request.Params.Before, request.Params.After, request.Params.Page, request.Params.PageSize)
+	if err != nil {
+		return nil, err
+	}
+	return api.GetPlayerPunishmentsMeKick200JSONResponse(toAPIPunishmentList(result)), nil
+}
+
+// listPlayerMeByType is the shared implementation behind the 4 GetPlayerPunishmentsMe{Type}
+// handlers: same params, same "caller's own uuid" restriction, differing only in which
+// per-type service method they delegate to.
+func (s *Server) listPlayerMeByType(
+	ctx context.Context,
+	list func(context.Context, service.ListParams) (domain.PunishmentList, error),
+	moderatorUuid *string, before, after *int64, page, pageSize *int32,
+) (domain.PunishmentList, error) {
+	uuid, ok := middleware.PlayerUUIDFromContext(ctx)
 	if !ok {
-		return nil, domain.NewInvalidType("type must be one of: bans, mutes, warnings, kicks")
+		return domain.PunishmentList{}, domain.NewUnauthorized("missing or invalid token")
+	}
+	moderatorUUID, err := normalizeOptionalUUID(moderatorUuid)
+	if err != nil {
+		return domain.PunishmentList{}, err
+	}
+	return list(ctx, service.ListParams{
+		Page:          intPtrFrom32(page),
+		PageSize:      intPtrFrom32(pageSize),
+		PlayerUUID:    &uuid,
+		ModeratorUUID: moderatorUUID,
+		Before:        before,
+		After:         after,
+	})
+}
+
+// GetPlayerPunishmentByID handles GET /player/punishments/{type}/{id}: the caller's own
+// punishments of any type, plus any active ban regardless of owner.
+func (s *Server) GetPlayerPunishmentByID(ctx context.Context, request api.GetPlayerPunishmentByIDRequestObject) (api.GetPlayerPunishmentByIDResponseObject, error) {
+	t, ok := domain.ParsePunishmentTypeSingular(string(request.Type))
+	if !ok {
+		return nil, domain.NewInvalidType("type must be one of: ban, mute, warning, kick")
 	}
 
 	result, err := s.punishmentSvc.GetByID(ctx, t, request.Id)
@@ -252,22 +257,103 @@ func (s *Server) GetPunishmentByID(ctx context.Context, request api.GetPunishmen
 		return nil, err
 	}
 
-	if s.isPublicType(t) {
-		return api.GetPunishmentByID200JSONResponse(toAPIPunishment(result)), nil
+	uuid, ok := middleware.PlayerUUIDFromContext(ctx)
+	if ok && uuid == result.PlayerUUID {
+		return api.GetPlayerPunishmentByID200JSONResponse(toAPIPunishment(result)), nil
+	}
+	if t == domain.TypeBan && result.Active != nil && *result.Active {
+		return api.GetPlayerPunishmentByID200JSONResponse(toAPIPunishment(result)), nil
+	}
+	return nil, domain.NewNotFound("punishment not found")
+}
+
+// GetModPunishments handles GET /mod/punishments: the full list across all players/moderators
+// and all 4 types. Access is already restricted to holders of the moderator permission by the
+// auth middleware.
+func (s *Server) GetModPunishments(ctx context.Context, request api.GetModPunishmentsRequestObject) (api.GetModPunishmentsResponseObject, error) {
+	result, err := s.listModByType(ctx, s.punishmentSvc.ListAll, request.Params.PlayerUuid, request.Params.ModeratorUuid, request.Params.Active, request.Params.Silent, request.Params.Page, request.Params.PageSize)
+	if err != nil {
+		return nil, err
+	}
+	return api.GetModPunishments200JSONResponse(toAPIPunishmentList(result)), nil
+}
+
+func (s *Server) GetModPunishmentsBan(ctx context.Context, request api.GetModPunishmentsBanRequestObject) (api.GetModPunishmentsBanResponseObject, error) {
+	result, err := s.listModByType(ctx, s.punishmentSvc.ListBans, request.Params.PlayerUuid, request.Params.ModeratorUuid, request.Params.Active, request.Params.Silent, request.Params.Page, request.Params.PageSize)
+	if err != nil {
+		return nil, err
+	}
+	return api.GetModPunishmentsBan200JSONResponse(toAPIPunishmentList(result)), nil
+}
+
+func (s *Server) GetModPunishmentsMute(ctx context.Context, request api.GetModPunishmentsMuteRequestObject) (api.GetModPunishmentsMuteResponseObject, error) {
+	result, err := s.listModByType(ctx, s.punishmentSvc.ListMutes, request.Params.PlayerUuid, request.Params.ModeratorUuid, request.Params.Active, request.Params.Silent, request.Params.Page, request.Params.PageSize)
+	if err != nil {
+		return nil, err
+	}
+	return api.GetModPunishmentsMute200JSONResponse(toAPIPunishmentList(result)), nil
+}
+
+func (s *Server) GetModPunishmentsWarning(ctx context.Context, request api.GetModPunishmentsWarningRequestObject) (api.GetModPunishmentsWarningResponseObject, error) {
+	result, err := s.listModByType(ctx, s.punishmentSvc.ListWarnings, request.Params.PlayerUuid, request.Params.ModeratorUuid, request.Params.Active, request.Params.Silent, request.Params.Page, request.Params.PageSize)
+	if err != nil {
+		return nil, err
+	}
+	return api.GetModPunishmentsWarning200JSONResponse(toAPIPunishmentList(result)), nil
+}
+
+func (s *Server) GetModPunishmentsKick(ctx context.Context, request api.GetModPunishmentsKickRequestObject) (api.GetModPunishmentsKickResponseObject, error) {
+	result, err := s.listModByType(ctx, s.punishmentSvc.ListKicks, request.Params.PlayerUuid, request.Params.ModeratorUuid, request.Params.Active, request.Params.Silent, request.Params.Page, request.Params.PageSize)
+	if err != nil {
+		return nil, err
+	}
+	return api.GetModPunishmentsKick200JSONResponse(toAPIPunishmentList(result)), nil
+}
+
+// listModByType is the shared implementation behind GetModPunishments and the 4
+// GetModPunishments{Type} handlers: same params, no ownership restriction, differing only in
+// which service method they delegate to.
+func (s *Server) listModByType(
+	ctx context.Context,
+	list func(context.Context, service.ListParams) (domain.PunishmentList, error),
+	playerUuid, moderatorUuid *string, active, silent *bool, page, pageSize *int32,
+) (domain.PunishmentList, error) {
+	playerUUID, err := normalizeOptionalUUID(playerUuid)
+	if err != nil {
+		return domain.PunishmentList{}, err
+	}
+	moderatorUUID, err := normalizeOptionalUUID(moderatorUuid)
+	if err != nil {
+		return domain.PunishmentList{}, err
+	}
+	return list(ctx, service.ListParams{
+		Page:          intPtrFrom32(page),
+		PageSize:      intPtrFrom32(pageSize),
+		Active:        active,
+		Silent:        silent,
+		PlayerUUID:    playerUUID,
+		ModeratorUUID: moderatorUUID,
+	})
+}
+
+// GetModPunishmentByID handles GET /mod/punishments/{type}/{id}: any punishment, any owner,
+// regardless of visibility. Access is already restricted to holders of the moderator
+// permission by the auth middleware.
+func (s *Server) GetModPunishmentByID(ctx context.Context, request api.GetModPunishmentByIDRequestObject) (api.GetModPunishmentByIDResponseObject, error) {
+	t, ok := domain.ParsePunishmentTypeSingular(string(request.Type))
+	if !ok {
+		return nil, domain.NewInvalidType("type must be one of: ban, mute, warning, kick")
 	}
 
-	uuid, ok := middleware.PlayerUUIDFromContext(ctx)
-	if !ok {
-		return nil, domain.NewNotFound("punishment not found")
+	result, err := s.punishmentSvc.GetByID(ctx, t, request.Id)
+	if err != nil {
+		return nil, err
 	}
-	if uuid == result.PlayerUUID {
-		return api.GetPunishmentByID200JSONResponse(toAPIPunishment(result)), nil
-	}
-	hasPermission, err := s.authority.HasPermission(ctx, uuid, s.modPermission)
-	if err != nil || !hasPermission {
-		return nil, domain.NewNotFound("punishment not found")
-	}
-	return api.GetPunishmentByID200JSONResponse(toAPIPunishment(result)), nil
+	return api.GetModPunishmentByID200JSONResponse(toAPIPunishment(result)), nil
+}
+
+func ptr[T any](v T) *T {
+	return &v
 }
 
 func intPtrFrom32(p *int32) *int {
