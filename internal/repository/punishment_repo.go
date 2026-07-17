@@ -52,8 +52,8 @@ func banColums() string {
 	var columns = []string{
 		"id", "uuid", "ip", "reason",
 		"banned_by_uuid", "banned_by_name", "time", "until",
-		"template", "server_scope", "server_origin", "silent",
-		"ipban", "ipban_wildcard", "active",
+		"template", "server_scope", "server_origin", bitColumn("silent"),
+		bitColumn("ipban"), bitColumn("ipban_wildcard"), bitColumn("active"),
 		"removed_by_uuid", "removed_by_name", "removed_by_reason",
 		"removed_by_date",
 	}
@@ -77,8 +77,8 @@ func muteColums() string {
 	var columns = []string{
 		"id", "uuid", "ip", "reason",
 		"banned_by_uuid", "banned_by_name", "time", "until",
-		"template", "server_scope", "server_origin", "silent",
-		"ipban", "ipban_wildcard", "active",
+		"template", "server_scope", "server_origin", bitColumn("silent"),
+		bitColumn("ipban"), bitColumn("ipban_wildcard"), bitColumn("active"),
 		"removed_by_uuid", "removed_by_name", "removed_by_reason",
 		"removed_by_date",
 	}
@@ -102,10 +102,10 @@ func warningColums() string {
 	var columns = []string{
 		"id", "uuid", "ip", "reason",
 		"banned_by_uuid", "banned_by_name", "time", "until",
-		"template", "server_scope", "server_origin", "silent",
-		"ipban", "ipban_wildcard", "active",
+		"template", "server_scope", "server_origin", bitColumn("silent"),
+		bitColumn("ipban"), bitColumn("ipban_wildcard"), bitColumn("active"),
 		"removed_by_uuid", "removed_by_name", "removed_by_reason",
-		"removed_by_date", "warned",
+		"removed_by_date", bitColumn("warned"),
 	}
 	return strings.Join(columns, ", ")
 }
@@ -125,8 +125,8 @@ func kickColums() string {
 	var columns = []string{
 		"id", "uuid", "ip", "reason",
 		"banned_by_uuid", "banned_by_name", "time", "until",
-		"template", "server_scope", "server_origin", "silent",
-		"ipban", "ipban_wildcard", "active",
+		"template", "server_scope", "server_origin", bitColumn("silent"),
+		bitColumn("ipban"), bitColumn("ipban_wildcard"), bitColumn("active"),
 	}
 	return strings.Join(columns, ", ")
 }
@@ -145,6 +145,13 @@ func scanUnifiedRow(scan scanner) (UnifiedRow, error) {
 	return row, err
 }
 
+// bitColumn casts a MySQL BIT(1) column to an unsigned integer. The go-sql-driver/mysql driver
+// returns BIT values as a raw single byte (0x00/0x01), which sql.NullBool.Scan can't parse
+// (it expects the ASCII string "0"/"1", not a literal byte) — casting server-side avoids that.
+func bitColumn(name string) string {
+	return fmt.Sprintf("%s + 0 AS %s", name, name)
+}
+
 // unifiedSourceColumns returns the column list for one branch of the UnifiedList UNION ALL,
 // substituting NULL for columns the branch's table doesn't physically have (kicks lack
 // removed_by_*, and only warnings have "warned").
@@ -152,8 +159,8 @@ func unifiedSourceColumns(hasRemoved, hasWarned bool) string {
 	cols := []string{
 		"id", "uuid", "ip", "reason",
 		"banned_by_uuid", "banned_by_name", "time", "until",
-		"template", "server_scope", "server_origin", "silent",
-		"ipban", "ipban_wildcard", "active",
+		"template", "server_scope", "server_origin", bitColumn("silent"),
+		bitColumn("ipban"), bitColumn("ipban_wildcard"), bitColumn("active"),
 	}
 	if hasRemoved {
 		cols = append(cols, "removed_by_uuid", "removed_by_name", "removed_by_reason", "removed_by_date")
@@ -161,7 +168,7 @@ func unifiedSourceColumns(hasRemoved, hasWarned bool) string {
 		cols = append(cols, "NULL", "NULL", "NULL", "NULL")
 	}
 	if hasWarned {
-		cols = append(cols, "warned")
+		cols = append(cols, bitColumn("warned"))
 	} else {
 		cols = append(cols, "NULL")
 	}
