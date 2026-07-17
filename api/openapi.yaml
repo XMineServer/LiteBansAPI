@@ -46,6 +46,8 @@ paths:
       parameters:
         - $ref: "#/components/parameters/PlayerUuid"
         - $ref: "#/components/parameters/ModeratorUuid"
+        - $ref: "#/components/parameters/Before"
+        - $ref: "#/components/parameters/After"
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
       responses:
@@ -381,6 +383,8 @@ paths:
         - $ref: "#/components/parameters/ModeratorUuid"
         - $ref: "#/components/parameters/Active"
         - $ref: "#/components/parameters/Silent"
+        - $ref: "#/components/parameters/Before"
+        - $ref: "#/components/parameters/After"
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
       responses:
@@ -415,6 +419,8 @@ paths:
         - $ref: "#/components/parameters/ModeratorUuid"
         - $ref: "#/components/parameters/Active"
         - $ref: "#/components/parameters/Silent"
+        - $ref: "#/components/parameters/Before"
+        - $ref: "#/components/parameters/After"
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
       responses:
@@ -449,6 +455,8 @@ paths:
         - $ref: "#/components/parameters/ModeratorUuid"
         - $ref: "#/components/parameters/Active"
         - $ref: "#/components/parameters/Silent"
+        - $ref: "#/components/parameters/Before"
+        - $ref: "#/components/parameters/After"
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
       responses:
@@ -483,6 +491,8 @@ paths:
         - $ref: "#/components/parameters/ModeratorUuid"
         - $ref: "#/components/parameters/Active"
         - $ref: "#/components/parameters/Silent"
+        - $ref: "#/components/parameters/Before"
+        - $ref: "#/components/parameters/After"
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
       responses:
@@ -517,6 +527,8 @@ paths:
         - $ref: "#/components/parameters/ModeratorUuid"
         - $ref: "#/components/parameters/Active"
         - $ref: "#/components/parameters/Silent"
+        - $ref: "#/components/parameters/Before"
+        - $ref: "#/components/parameters/After"
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
       responses:

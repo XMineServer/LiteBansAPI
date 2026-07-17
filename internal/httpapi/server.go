@@ -51,6 +51,8 @@ func (s *Server) GetPublicPunishments(ctx context.Context, request api.GetPublic
 		Silent:        ptr(false),
 		PlayerUUID:    playerUUID,
 		ModeratorUUID: moderatorUUID,
+		Before:        p.Before,
+		After:         p.After,
 	})
 	if err != nil {
 		return nil, err
@@ -307,7 +309,8 @@ func (s *Server) GetPlayerPunishmentByID(ctx context.Context, request api.GetPla
 // and all 4 types. Access is already restricted to holders of the moderator permission by the
 // auth middleware.
 func (s *Server) GetModPunishments(ctx context.Context, request api.GetModPunishmentsRequestObject) (api.GetModPunishmentsResponseObject, error) {
-	result, err := s.listModByType(ctx, s.punishmentSvc.ListAll, request.Params.PlayerUuid, request.Params.ModeratorUuid, request.Params.Active, request.Params.Silent, request.Params.Page, request.Params.PageSize)
+	p := request.Params
+	result, err := s.listModByType(ctx, s.punishmentSvc.ListAll, p.PlayerUuid, p.ModeratorUuid, p.Active, p.Silent, p.Before, p.After, p.Page, p.PageSize)
 	if err != nil {
 		return nil, err
 	}
@@ -315,7 +318,8 @@ func (s *Server) GetModPunishments(ctx context.Context, request api.GetModPunish
 }
 
 func (s *Server) GetModPunishmentsBan(ctx context.Context, request api.GetModPunishmentsBanRequestObject) (api.GetModPunishmentsBanResponseObject, error) {
-	result, err := s.listModByType(ctx, s.punishmentSvc.ListBans, request.Params.PlayerUuid, request.Params.ModeratorUuid, request.Params.Active, request.Params.Silent, request.Params.Page, request.Params.PageSize)
+	p := request.Params
+	result, err := s.listModByType(ctx, s.punishmentSvc.ListBans, p.PlayerUuid, p.ModeratorUuid, p.Active, p.Silent, p.Before, p.After, p.Page, p.PageSize)
 	if err != nil {
 		return nil, err
 	}
@@ -323,7 +327,8 @@ func (s *Server) GetModPunishmentsBan(ctx context.Context, request api.GetModPun
 }
 
 func (s *Server) GetModPunishmentsMute(ctx context.Context, request api.GetModPunishmentsMuteRequestObject) (api.GetModPunishmentsMuteResponseObject, error) {
-	result, err := s.listModByType(ctx, s.punishmentSvc.ListMutes, request.Params.PlayerUuid, request.Params.ModeratorUuid, request.Params.Active, request.Params.Silent, request.Params.Page, request.Params.PageSize)
+	p := request.Params
+	result, err := s.listModByType(ctx, s.punishmentSvc.ListMutes, p.PlayerUuid, p.ModeratorUuid, p.Active, p.Silent, p.Before, p.After, p.Page, p.PageSize)
 	if err != nil {
 		return nil, err
 	}
@@ -331,7 +336,8 @@ func (s *Server) GetModPunishmentsMute(ctx context.Context, request api.GetModPu
 }
 
 func (s *Server) GetModPunishmentsWarning(ctx context.Context, request api.GetModPunishmentsWarningRequestObject) (api.GetModPunishmentsWarningResponseObject, error) {
-	result, err := s.listModByType(ctx, s.punishmentSvc.ListWarnings, request.Params.PlayerUuid, request.Params.ModeratorUuid, request.Params.Active, request.Params.Silent, request.Params.Page, request.Params.PageSize)
+	p := request.Params
+	result, err := s.listModByType(ctx, s.punishmentSvc.ListWarnings, p.PlayerUuid, p.ModeratorUuid, p.Active, p.Silent, p.Before, p.After, p.Page, p.PageSize)
 	if err != nil {
 		return nil, err
 	}
@@ -339,7 +345,8 @@ func (s *Server) GetModPunishmentsWarning(ctx context.Context, request api.GetMo
 }
 
 func (s *Server) GetModPunishmentsKick(ctx context.Context, request api.GetModPunishmentsKickRequestObject) (api.GetModPunishmentsKickResponseObject, error) {
-	result, err := s.listModByType(ctx, s.punishmentSvc.ListKicks, request.Params.PlayerUuid, request.Params.ModeratorUuid, request.Params.Active, request.Params.Silent, request.Params.Page, request.Params.PageSize)
+	p := request.Params
+	result, err := s.listModByType(ctx, s.punishmentSvc.ListKicks, p.PlayerUuid, p.ModeratorUuid, p.Active, p.Silent, p.Before, p.After, p.Page, p.PageSize)
 	if err != nil {
 		return nil, err
 	}
@@ -352,7 +359,7 @@ func (s *Server) GetModPunishmentsKick(ctx context.Context, request api.GetModPu
 func (s *Server) listModByType(
 	ctx context.Context,
 	list func(context.Context, service.ListParams) (domain.PunishmentList, error),
-	playerUuid, moderatorUuid *string, active, silent *bool, page, pageSize *int32,
+	playerUuid, moderatorUuid *string, active, silent *bool, before, after *int64, page, pageSize *int32,
 ) (domain.PunishmentList, error) {
 	playerUUID, err := normalizeOptionalUUID(playerUuid)
 	if err != nil {
@@ -369,6 +376,8 @@ func (s *Server) listModByType(
 		Silent:        silent,
 		PlayerUUID:    playerUUID,
 		ModeratorUUID: moderatorUUID,
+		Before:        before,
+		After:         after,
 	})
 }
 
