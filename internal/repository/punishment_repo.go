@@ -176,19 +176,26 @@ func unifiedSourceColumns(hasRemoved, hasWarned bool) string {
 }
 
 // buildVisibilityWhere builds the WHERE fragment + args for list/count queries: excludes rows
-// without a linked player and applies the active/silent/time-range filters.
-func buildVisibilityWhere(f PunishmentFilter, now int64) (string, []any) {
+// without a linked player and applies the active/silent/time-range filters. hasRemoved says
+// whether the query's rows carry a removed_by_date column (true for ban/mute/warning and the
+// unified listing, false for kicks, which have no removal columns at all) — an active punishment
+// must not only still be within its time window but also not have been explicitly lifted by a
+// moderator, since LiteBans doesn't reliably flip the `active` bit back to 0 on manual removal.
+func buildVisibilityWhere(f PunishmentFilter, now int64, hasRemoved bool) (string, []any) {
 	clauses := []string{"uuid IS NOT NULL", fmt.Sprintf("uuid <> '%s'", OfflineUUIDMarker)}
 	var args []any
 
 	if f.ActiveFilter != nil {
-		if *f.ActiveFilter {
-			clauses = append(clauses, "(active = 1 AND (until <= 0 OR until > ?))")
-			args = append(args, now)
-		} else {
-			clauses = append(clauses, "NOT (active = 1 AND (until <= 0 OR until > ?))")
-			args = append(args, now)
+		activeExpr := "active = 1 AND (until <= 0 OR until > ?)"
+		if hasRemoved {
+			activeExpr += " AND removed_by_date IS NULL"
 		}
+		if *f.ActiveFilter {
+			clauses = append(clauses, "("+activeExpr+")")
+		} else {
+			clauses = append(clauses, "NOT ("+activeExpr+")")
+		}
+		args = append(args, now)
 	}
 	if f.SilentFilter != nil {
 		clauses = append(clauses, "silent = ?")
@@ -214,7 +221,7 @@ func buildVisibilityWhere(f PunishmentFilter, now int64) (string, []any) {
 }
 
 func (r *PunishmentRepository) BanList(ctx context.Context, f PunishmentFilter, page int, pageSize int, now int64) ([]BanRow, int64, error) {
-	where, args := buildVisibilityWhere(f, now)
+	where, args := buildVisibilityWhere(f, now, true)
 	table := r.tablePrefix + "bans"
 
 	countQuery := fmt.Sprintf("SELECT count(*) FROM %s WHERE %s", table, where)
@@ -249,7 +256,7 @@ func (r *PunishmentRepository) BanList(ctx context.Context, f PunishmentFilter, 
 }
 
 func (r *PunishmentRepository) WarningList(ctx context.Context, f PunishmentFilter, page int, pageSize int, now int64) ([]WarningRow, int64, error) {
-	where, args := buildVisibilityWhere(f, now)
+	where, args := buildVisibilityWhere(f, now, true)
 	table := r.tablePrefix + "warnings"
 
 	countQuery := fmt.Sprintf("SELECT count(*) FROM %s WHERE %s", table, where)
@@ -284,7 +291,7 @@ func (r *PunishmentRepository) WarningList(ctx context.Context, f PunishmentFilt
 }
 
 func (r *PunishmentRepository) MuteList(ctx context.Context, f PunishmentFilter, page int, pageSize int, now int64) ([]MuteRow, int64, error) {
-	where, args := buildVisibilityWhere(f, now)
+	where, args := buildVisibilityWhere(f, now, true)
 	table := r.tablePrefix + "mutes"
 
 	countQuery := fmt.Sprintf("SELECT count(*) FROM %s WHERE %s", table, where)
@@ -319,7 +326,7 @@ func (r *PunishmentRepository) MuteList(ctx context.Context, f PunishmentFilter,
 }
 
 func (r *PunishmentRepository) KickList(ctx context.Context, f PunishmentFilter, page int, pageSize int, now int64) ([]KickRow, int64, error) {
-	where, args := buildVisibilityWhere(f, now)
+	where, args := buildVisibilityWhere(f, now, false)
 	table := r.tablePrefix + "kicks"
 
 	countQuery := fmt.Sprintf("SELECT count(*) FROM %s WHERE %s", table, where)
@@ -368,7 +375,11 @@ var unifiedSources = []unifiedSource{
 }
 
 func (r *PunishmentRepository) UnifiedList(ctx context.Context, f PunishmentFilter, page int, pageSize int, now int64) ([]UnifiedRow, int64, error) {
-	where, args := buildVisibilityWhere(f, now)
+	// The merged derived table always exposes a real removed_by_date column: the first UNION
+	// branch (ban) has one, and MySQL/MariaDB names the result set's columns from it. Kicks are
+	// padded with a literal NULL for that column (see unifiedSourceColumns), so "removed_by_date
+	// IS NULL" is trivially true for them — consistent with kicks never being explicitly removed.
+	where, args := buildVisibilityWhere(f, now, true)
 
 	parts := make([]string, 0, len(unifiedSources))
 	for _, s := range unifiedSources {
@@ -479,23 +490,23 @@ func (r *PunishmentRepository) GetKickByID(ctx context.Context, id int64) (*Kick
 }
 
 func (r *PunishmentRepository) CountBan(ctx context.Context, f PunishmentFilter, now int64) (int64, error) {
-	return r.countPunishment(ctx, f, now, r.tablePrefix+"bans")
+	return r.countPunishment(ctx, f, now, r.tablePrefix+"bans", true)
 }
 
 func (r *PunishmentRepository) CountKick(ctx context.Context, f PunishmentFilter, now int64) (int64, error) {
-	return r.countPunishment(ctx, f, now, r.tablePrefix+"kicks")
+	return r.countPunishment(ctx, f, now, r.tablePrefix+"kicks", false)
 }
 
 func (r *PunishmentRepository) CountMute(ctx context.Context, f PunishmentFilter, now int64) (int64, error) {
-	return r.countPunishment(ctx, f, now, r.tablePrefix+"mutes")
+	return r.countPunishment(ctx, f, now, r.tablePrefix+"mutes", true)
 }
 
 func (r *PunishmentRepository) CountWarning(ctx context.Context, f PunishmentFilter, now int64) (int64, error) {
-	return r.countPunishment(ctx, f, now, r.tablePrefix+"warnings")
+	return r.countPunishment(ctx, f, now, r.tablePrefix+"warnings", true)
 }
 
-func (r *PunishmentRepository) countPunishment(ctx context.Context, f PunishmentFilter, now int64, table string) (int64, error) {
-	where, args := buildVisibilityWhere(f, now)
+func (r *PunishmentRepository) countPunishment(ctx context.Context, f PunishmentFilter, now int64, table string, hasRemoved bool) (int64, error) {
+	where, args := buildVisibilityWhere(f, now, hasRemoved)
 	query := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE %s", table, where)
 	var total int64
 	if err := r.db.QueryRowContext(ctx, query, args...).Scan(&total); err != nil {
