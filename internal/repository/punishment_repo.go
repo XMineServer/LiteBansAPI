@@ -177,10 +177,16 @@ func unifiedSourceColumns(hasRemoved, hasWarned bool) string {
 
 // buildVisibilityWhere builds the WHERE fragment + args for list/count queries: excludes rows
 // without a linked player and applies the active/silent/time-range filters. hasRemoved says
-// whether the query's rows carry a removed_by_date column (true for ban/mute/warning and the
-// unified listing, false for kicks, which have no removal columns at all) — an active punishment
-// must not only still be within its time window but also not have been explicitly lifted by a
-// moderator, since LiteBans doesn't reliably flip the `active` bit back to 0 on manual removal.
+// whether the query's rows carry removed_by_* columns (true for ban/mute/warning and the unified
+// listing, false for kicks, which have no removal columns at all) — an active punishment must not
+// only still be within its time window but also not have been explicitly lifted by a moderator,
+// since LiteBans doesn't reliably flip the `active` bit back to 0 on manual removal. Note:
+// removed_by_date is NOT usable for this check — it defaults to CURRENT_TIMESTAMP, so it's
+// populated at insert time for every row regardless of whether it was ever actually removed.
+// removed_by_name isn't usable either — it can be legitimately null even on a genuine removal
+// (e.g. console). removed_by_uuid is the only column that's reliably set exactly when the
+// punishment was actually removed, so it's the only one used here — treating an empty string
+// the same as NULL, in case the column holds "" instead of a true NULL.
 func buildVisibilityWhere(f PunishmentFilter, now int64, hasRemoved bool) (string, []any) {
 	clauses := []string{"uuid IS NOT NULL", fmt.Sprintf("uuid <> '%s'", OfflineUUIDMarker)}
 	var args []any
@@ -188,7 +194,7 @@ func buildVisibilityWhere(f PunishmentFilter, now int64, hasRemoved bool) (strin
 	if f.ActiveFilter != nil {
 		activeExpr := "active = 1 AND (until <= 0 OR until > ?)"
 		if hasRemoved {
-			activeExpr += " AND removed_by_date IS NULL"
+			activeExpr += " AND (removed_by_uuid IS NULL OR removed_by_uuid = '')"
 		}
 		if *f.ActiveFilter {
 			clauses = append(clauses, "("+activeExpr+")")
@@ -375,9 +381,9 @@ var unifiedSources = []unifiedSource{
 }
 
 func (r *PunishmentRepository) UnifiedList(ctx context.Context, f PunishmentFilter, page int, pageSize int, now int64) ([]UnifiedRow, int64, error) {
-	// The merged derived table always exposes a real removed_by_date column: the first UNION
+	// The merged derived table always exposes a real removed_by_uuid column: the first UNION
 	// branch (ban) has one, and MySQL/MariaDB names the result set's columns from it. Kicks are
-	// padded with a literal NULL for that column (see unifiedSourceColumns), so "removed_by_date
+	// padded with a literal NULL for that column (see unifiedSourceColumns), so "removed_by_uuid
 	// IS NULL" is trivially true for them — consistent with kicks never being explicitly removed.
 	where, args := buildVisibilityWhere(f, now, true)
 

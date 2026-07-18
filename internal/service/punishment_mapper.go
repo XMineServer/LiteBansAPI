@@ -105,7 +105,13 @@ func (s *PunishmentService) toDomain(ctx context.Context, row repository.Punishm
 		warned = r.Warned
 	}
 
-	explicitlyRemoved := removedDate.Valid
+	// removed_by_date is not a reliable "was removed" signal: the column defaults to
+	// CURRENT_TIMESTAMP, so it's populated at insert time for every row, removed or not.
+	// removed_by_name isn't reliable either — it can be legitimately null even on a genuine
+	// removal (e.g. console). removed_by_uuid is the only column that's always set when — and
+	// only when — the punishment was actually removed, so it's the sole signal we trust here.
+	// Treat an empty string the same as NULL, in case the column holds "" instead of a true NULL.
+	explicitlyRemoved := removedUUID.Valid && removedUUID.String != ""
 	expired := !explicitlyRemoved && !permanent && base.Until > 0 && base.Until <= now
 	item.Expired = ptr(expired)
 
